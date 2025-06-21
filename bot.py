@@ -11,8 +11,8 @@ os.makedirs(SAVE_DIR, exist_ok=True)
 
 # Configurazione AsyncPRAW (inserisci le tue credenziali Reddit)
 areddit = asyncpraw.Reddit(
-    client_id="INSERISCI_CLIENT_ID",
-    client_secret="INSERISCI_CLIENT_SECRET",
+    client_id="zwBi1I4DMCFI0QM_meFqJQ",
+    client_secret="1x-jhTKVAyGAJ79ztZwaYab-c7JJLQ",
     user_agent="telegram-bot-reddit"
 )
 
