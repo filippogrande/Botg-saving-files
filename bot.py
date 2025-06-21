@@ -4,13 +4,13 @@ import os
 from datetime import datetime
 import re
 import requests
-import praw
+import asyncpraw
 
 SAVE_DIR = "/mnt/truenas-bot"
 os.makedirs(SAVE_DIR, exist_ok=True)
 
-# Configurazione PRAW (inserisci le tue credenziali Reddit)
-reddit = praw.Reddit(
+# Configurazione AsyncPRAW (inserisci le tue credenziali Reddit)
+areddit = asyncpraw.Reddit(
     client_id="INSERISCI_CLIENT_ID",
     client_secret="INSERISCI_CLIENT_SECRET",
     user_agent="telegram-bot-reddit"
@@ -51,7 +51,7 @@ async def handle_reddit_link(update: Update, context: ContextTypes.DEFAULT_TYPE)
         if "/s/" in url:
             resp = requests.get(url, allow_redirects=True, timeout=10)
             url = resp.url
-        submission = reddit.submission(url=url)
+        submission = await areddit.submission(url=url)
         author = submission.author.name if submission.author else "unknown"
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         # Gestione galleria immagini
