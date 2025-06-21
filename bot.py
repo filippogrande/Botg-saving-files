@@ -114,11 +114,14 @@ async def handle_reddit_link(update: Update, context: ContextTypes.DEFAULT_TYPE)
                     import re as _re
                     redgifs_url = submission.url
                     page = requests.get(redgifs_url, timeout=20).text
-                    # Prova prima regex classica
+                    # Prova varie regex per trovare il link mp4
                     match = _re.search(r'source src="(https://[^"]+\.mp4)"', page)
-                    # Se non trova, prova regex alternativa usata da Redgifs
                     if not match:
                         match = _re.search(r'"mp4Source":"(https://[^"]+\.mp4)"', page)
+                    if not match:
+                        match = _re.search(r'"hdSrc":"(https://[^"]+\.mp4)"', page)
+                    if not match:
+                        match = _re.search(r'"urls":\{"hd":"(https://[^"]+\.mp4)"', page)
                     if match:
                         video_url = match.group(1).replace('\\u0026', '&')
                         ext = ".mp4"
@@ -126,13 +129,13 @@ async def handle_reddit_link(update: Update, context: ContextTypes.DEFAULT_TYPE)
                         r = requests.get(video_url, timeout=20)
                         with open(filename, 'wb') as f:
                             f.write(r.content)
-                        await update.message.reply_text(f"Video Redgifs salvato come {os.path.basename(filename)}!")
+                        await update.message.reply_text(f"Video Redgifs salvato come {os.path.basename(filename)}!\nURL: {video_url}")
                         return
                     else:
-                        await update.message.reply_text("Non sono riuscito a trovare il video Redgifs diretto (regex aggiornata).")
+                        await update.message.reply_text(f"Non sono riuscito a trovare il video Redgifs diretto (regex aggiornata, nessun match trovato).\nLink Redgifs: {redgifs_url}")
                         return
                 except Exception as e:
-                    await update.message.reply_text("Errore durante il download del video Redgifs.")
+                    await update.message.reply_text(f"Errore durante il download del video Redgifs: {e}")
                     return
             await update.message.reply_text(f"Questo post Reddit non contiene immagini o video scaricabili.\npost_hint: {hint}, is_video: {is_video}, provider: {provider}")
     except Exception as e:
