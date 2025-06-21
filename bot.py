@@ -86,7 +86,30 @@ async def handle_reddit_link(update: Update, context: ContextTypes.DEFAULT_TYPE)
         else:
             hint = getattr(submission, 'post_hint', 'N/A')
             is_video = getattr(submission, 'is_video', 'N/A')
-            await update.message.reply_text(f"Questo post Reddit non contiene immagini o video scaricabili.\npost_hint: {hint}, is_video: {is_video}")
+            provider = submission.media['oembed']['provider_name'] if submission.media and 'oembed' in submission.media and 'provider_name' in submission.media['oembed'] else 'N/A'
+            # Gestione Redgifs
+            if provider.lower() == 'redgifs':
+                try:
+                    import re as _re
+                    redgifs_url = submission.url
+                    page = requests.get(redgifs_url, timeout=20).text
+                    match = _re.search(r'source src="(https://[^"]+\.mp4)"', page)
+                    if match:
+                        video_url = match.group(1)
+                        ext = ".mp4"
+                        filename = f"{SAVE_DIR}/{author}_{submission.id}_{timestamp}_redgifs{ext}"
+                        r = requests.get(video_url, timeout=20)
+                        with open(filename, 'wb') as f:
+                            f.write(r.content)
+                        await update.message.reply_text(f"Video Redgifs salvato come {os.path.basename(filename)}!")
+                        return
+                    else:
+                        await update.message.reply_text("Non sono riuscito a trovare il video Redgifs diretto.")
+                        return
+                except Exception as e:
+                    await update.message.reply_text("Errore durante il download del video Redgifs.")
+                    return
+            await update.message.reply_text(f"Questo post Reddit non contiene immagini o video scaricabili.\npost_hint: {hint}, is_video: {is_video}, provider: {provider}")
     except Exception as e:
         await update.message.reply_text("Errore durante il download del contenuto Reddit.")
 
