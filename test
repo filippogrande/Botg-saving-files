@@ -1,0 +1,8 @@
+
+su - root
+cd ../websites/websites/amiibo-database/ 
+git pull
+systemctl restart nginx
+
+su - postgres
+psql -U postgres -d amiibo_db
