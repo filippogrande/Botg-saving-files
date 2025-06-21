@@ -93,9 +93,13 @@ async def handle_reddit_link(update: Update, context: ContextTypes.DEFAULT_TYPE)
                     import re as _re
                     redgifs_url = submission.url
                     page = requests.get(redgifs_url, timeout=20).text
+                    # Prova prima regex classica
                     match = _re.search(r'source src="(https://[^"]+\.mp4)"', page)
+                    # Se non trova, prova regex alternativa usata da Redgifs
+                    if not match:
+                        match = _re.search(r'"mp4Source":"(https://[^"]+\.mp4)"', page)
                     if match:
-                        video_url = match.group(1)
+                        video_url = match.group(1).replace('\\u0026', '&')
                         ext = ".mp4"
                         filename = f"{SAVE_DIR}/{author}_{submission.id}_{timestamp}_redgifs{ext}"
                         r = requests.get(video_url, timeout=20)
@@ -104,7 +108,7 @@ async def handle_reddit_link(update: Update, context: ContextTypes.DEFAULT_TYPE)
                         await update.message.reply_text(f"Video Redgifs salvato come {os.path.basename(filename)}!")
                         return
                     else:
-                        await update.message.reply_text("Non sono riuscito a trovare il video Redgifs diretto.")
+                        await update.message.reply_text("Non sono riuscito a trovare il video Redgifs diretto (regex aggiornata).")
                         return
                 except Exception as e:
                     await update.message.reply_text("Errore durante il download del video Redgifs.")
