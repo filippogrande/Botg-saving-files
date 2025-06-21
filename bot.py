@@ -84,7 +84,9 @@ async def handle_reddit_link(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 f.write(r.content)
             await update.message.reply_text(f"Video Reddit salvato come {os.path.basename(filename)}!")
         else:
-            await update.message.reply_text("Questo post Reddit non contiene immagini o video scaricabili.")
+            hint = getattr(submission, 'post_hint', 'N/A')
+            is_video = getattr(submission, 'is_video', 'N/A')
+            await update.message.reply_text(f"Questo post Reddit non contiene immagini o video scaricabili.\npost_hint: {hint}, is_video: {is_video}")
     except Exception as e:
         await update.message.reply_text("Errore durante il download del contenuto Reddit.")
 
