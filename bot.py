@@ -126,6 +126,10 @@ async def handle_reddit_link(update: Update, context: ContextTypes.DEFAULT_TYPE)
     except Exception as e:
         await update.message.reply_text("Errore durante il download del contenuto Reddit.")
 
+async def handle_unknown(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg_type = update.message.effective_attachment or update.message.text or 'messaggio non identificato'
+    await update.message.reply_text(f"Il tipo di file o messaggio che hai inviato non è supportato dal bot.\nTipo ricevuto: {type(msg_type).__name__}")
+
 app = ApplicationBuilder().token("7564134479:AAHKqBkapm75YYJoYRBzS1NLFQskmbC-LcY").build()
 
 app.add_handler(CommandHandler("hello", hello))
@@ -133,6 +137,7 @@ app.add_handler(CommandHandler("start", start))
 app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 app.add_handler(MessageHandler(filters.VIDEO, handle_video))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_reddit_link))
+app.add_handler(MessageHandler(~(filters.PHOTO | filters.VIDEO | filters.TEXT & ~filters.COMMAND), handle_unknown))
 
 app.run_polling()
 
