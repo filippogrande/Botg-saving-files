@@ -1,5 +1,5 @@
 from telegram import Update
-from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters
+from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters, CommandHandler
 import os
 from datetime import datetime
 
@@ -35,15 +35,18 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await file.download_to_drive(filename)
     await update.message.reply_text("Video salvato con successo!")
 
+async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Benvenuto! Questo è un bot Telegram per uso personale. Funziona solo per l'utente autorizzato e non è destinato ad altri utenti.")
+
 # Avvio del bot
 async def main():
     app = ApplicationBuilder().token("7564134479:AAHKqBkapm75YYJoYRBzSINLFQskmbC-LcY").build()
 
+    app.add_handler(CommandHandler("start", handle_start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.VIDEO, handle_video))
 
-    print("Benvenuto! Questo è un bot Telegram per uso personale. Funziona solo per l'utente autorizzato e non è destinato ad altri utenti.")
     print("In ascolto dei messaggi...")
     await app.run_polling()
 
