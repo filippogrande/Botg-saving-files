@@ -38,6 +38,14 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await file.download_to_drive(filename)
     await update.message.reply_text("Video ricevuto!")
 
+async def handle_animation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    animation = update.message.animation
+    file = await context.bot.get_file(animation.file_id)
+    filename = f"{SAVE_DIR}/{user.id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
+    await file.download_to_drive(filename)
+    await update.message.reply_text("GIF animata salvata come mp4!")
+
 async def handle_reddit_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     reddit_pattern = r"https?://(www\.)?reddit\.com/r/[\w\d_]+/(comments/[\w\d]+/[\w\d_]+|s/[\w\d]+)"
@@ -136,8 +144,9 @@ app.add_handler(CommandHandler("hello", hello))
 app.add_handler(CommandHandler("start", start))
 app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 app.add_handler(MessageHandler(filters.VIDEO, handle_video))
+app.add_handler(MessageHandler(filters.ANIMATION, handle_animation))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_reddit_link))
-app.add_handler(MessageHandler(~(filters.PHOTO | filters.VIDEO | filters.TEXT & ~filters.COMMAND), handle_unknown))
+app.add_handler(MessageHandler(~(filters.PHOTO | filters.VIDEO | filters.ANIMATION | filters.TEXT & ~filters.COMMAND), handle_unknown))
 
 app.run_polling()
 
