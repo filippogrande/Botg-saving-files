@@ -42,7 +42,10 @@ async def handle_reddit_link(update: Update, context: ContextTypes.DEFAULT_TYPE)
     text = update.message.text
     reddit_pattern = r"https?://(www\.)?reddit\.com/r/[\w\d_]+/comments/[\w\d]+/[\w\d_]+"
     match = re.search(reddit_pattern, text)
-    if match:
+    if not match:
+        await update.message.reply_text("Non ho riconosciuto un link Reddit valido.")
+        return
+    try:
         url = match.group(0)
         submission = reddit.submission(url=url)
         author = submission.author.name if submission.author else "unknown"
@@ -54,7 +57,7 @@ async def handle_reddit_link(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 media_url = submission.media_metadata[media_id]['s']['u']
                 ext = os.path.splitext(media_url)[1].split('?')[0]
                 filename = f"{SAVE_DIR}/{author}_{submission.id}_{timestamp}_{idx}{ext}"
-                r = requests.get(media_url)
+                r = requests.get(media_url, timeout=20)
                 with open(filename, 'wb') as f:
                     f.write(r.content)
             await update.message.reply_text(f"{len(submission.gallery_data['items'])} immagini Reddit salvate!")
@@ -63,7 +66,7 @@ async def handle_reddit_link(update: Update, context: ContextTypes.DEFAULT_TYPE)
             media_url = submission.url
             ext = os.path.splitext(media_url)[1]
             filename = f"{SAVE_DIR}/{author}_{submission.id}_{timestamp}{ext}"
-            r = requests.get(media_url)
+            r = requests.get(media_url, timeout=20)
             with open(filename, 'wb') as f:
                 f.write(r.content)
             await update.message.reply_text(f"Immagine Reddit salvata come {os.path.basename(filename)}!")
@@ -72,12 +75,14 @@ async def handle_reddit_link(update: Update, context: ContextTypes.DEFAULT_TYPE)
             media_url = submission.media['reddit_video']['fallback_url']
             ext = ".mp4"
             filename = f"{SAVE_DIR}/{author}_{submission.id}_{timestamp}{ext}"
-            r = requests.get(media_url)
+            r = requests.get(media_url, timeout=20)
             with open(filename, 'wb') as f:
                 f.write(r.content)
             await update.message.reply_text(f"Video Reddit salvato come {os.path.basename(filename)}!")
         else:
             await update.message.reply_text("Questo post Reddit non contiene immagini o video scaricabili.")
+    except Exception as e:
+        await update.message.reply_text("Errore durante il download del contenuto Reddit.")
 
 app = ApplicationBuilder().token("7564134479:AAHKqBkapm75YYJoYRBzS1NLFQskmbC-LcY").build()
 
