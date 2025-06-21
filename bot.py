@@ -122,6 +122,9 @@ async def handle_reddit_link(update: Update, context: ContextTypes.DEFAULT_TYPE)
                         match = _re.search(r'"hdSrc":"(https://[^"]+\.mp4)"', page)
                     if not match:
                         match = _re.search(r'"urls":\{"hd":"(https://[^"]+\.mp4)"', page)
+                    # Nuova regex: cerca "mp4":"(https://...mp4)"
+                    if not match:
+                        match = _re.search(r'"mp4":"(https://[^"]+\.mp4)"', page)
                     if match:
                         video_url = match.group(1).replace('\\u0026', '&')
                         ext = ".mp4"
