@@ -152,6 +152,7 @@ async def handle_redgifs_user(update: Update, context: ContextTypes.DEFAULT_TYPE
     import yt_dlp
     import re as _re
     import asyncio
+    import time
     text = update.message.text
     user_pattern = r"https?://(www\.)?redgifs\.com/users/([\w\d_-]+)"
     match = _re.search(user_pattern, text)
@@ -171,14 +172,19 @@ async def handle_redgifs_user(update: Update, context: ContextTypes.DEFAULT_TYPE
         'force_generic_extractor': True,
     }
     try:
+        last_update = time.time()
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(user_url, download=False)
             entries = info.get('entries', [])
-            for entry in entries:
+            for idx, entry in enumerate(entries):
                 video_url = entry.get('url')
                 if video_url:
                     ydl.download([video_url])
                     await asyncio.sleep(2)  # Attendi 2 secondi tra un download e l'altro
+                # Ogni 30 minuti invia un messaggio di stato
+                if time.time() - last_update > 1800:
+                    await update.message.reply_text(f"Sto ancora scaricando i video di {username} in background...")
+                    last_update = time.time()
         await update.message.reply_text(f"Download dei video di {username} completato.")
     except Exception as e:
         await update.message.reply_text(f"Errore durante il download dei video Redgifs dell'utente {username}: {e}")
