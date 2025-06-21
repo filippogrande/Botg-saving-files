@@ -40,13 +40,17 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_reddit_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
-    reddit_pattern = r"https?://(www\.)?reddit\.com/r/[\w\d_]+/comments/[\w\d]+/[\w\d_]+"
+    reddit_pattern = r"https?://(www\.)?reddit\.com/r/[\w\d_]+/(comments/[\w\d]+/[\w\d_]+|s/[\w\d]+)"
     match = re.search(reddit_pattern, text)
     if not match:
         await update.message.reply_text("Non ho riconosciuto un link Reddit valido.")
         return
     try:
         url = match.group(0)
+        # Se è un link short (/s/...), risolvi il redirect
+        if "/s/" in url:
+            resp = requests.get(url, allow_redirects=True, timeout=10)
+            url = resp.url
         submission = reddit.submission(url=url)
         author = submission.author.name if submission.author else "unknown"
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
