@@ -83,6 +83,15 @@ async def handle_reddit_link(update: Update, context: ContextTypes.DEFAULT_TYPE)
             with open(filename, 'wb') as f:
                 f.write(r.content)
             await update.message.reply_text(f"Video Reddit salvato come {os.path.basename(filename)}!")
+        # Gestione gif/gifv/webm/mp4 diretti
+        elif any(submission.url.endswith(ext) for ext in ['.gif', '.gifv', '.webm', '.mp4']):
+            media_url = submission.url
+            ext = ".mp4"
+            filename = f"{SAVE_DIR}/{author}_{submission.id}_{timestamp}{ext}"
+            r = requests.get(media_url, timeout=20)
+            with open(filename, 'wb') as f:
+                f.write(r.content)
+            await update.message.reply_text(f"GIF/Video Reddit salvato come {os.path.basename(filename)}!")
         else:
             hint = getattr(submission, 'post_hint', 'N/A')
             is_video = getattr(submission, 'is_video', 'N/A')
