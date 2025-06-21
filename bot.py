@@ -148,6 +148,32 @@ async def handle_unknown(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg_type = update.message.effective_attachment or update.message.text or 'messaggio non identificato'
     await update.message.reply_text(f"Il tipo di file o messaggio che hai inviato non è supportato dal bot.\nTipo ricevuto: {type(msg_type).__name__}")
 
+async def handle_redgifs_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    import yt_dlp
+    import re as _re
+    text = update.message.text
+    user_pattern = r"https?://(www\.)?redgifs\.com/users/([\w\d_-]+)"
+    match = _re.search(user_pattern, text)
+    if not match:
+        await update.message.reply_text("Non ho riconosciuto un link utente Redgifs valido.")
+        return
+    username = match.group(2)
+    await update.message.reply_text(f"Inizio a scaricare i video pubblici di: {username}. Potrebbe volerci molto tempo...")
+    user_url = f"https://www.redgifs.com/users/{username}/creations"
+    ydl_opts = {
+        'outtmpl': f"{SAVE_DIR}/redgifs_{username}_%(title)s.%(ext)s",
+        'format': 'mp4/bestvideo+bestaudio/best',
+        'quiet': True,
+        'merge_output_format': 'mp4',
+        'ignoreerrors': True,
+    }
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            result = ydl.download([user_url])
+        await update.message.reply_text(f"Download dei video di {username} completato.")
+    except Exception as e:
+        await update.message.reply_text(f"Errore durante il download dei video Redgifs dell'utente {username}: {e}")
+
 app = ApplicationBuilder().token("7564134479:AAHKqBkapm75YYJoYRBzS1NLFQskmbC-LcY").build()
 
 app.add_handler(CommandHandler("hello", hello))
@@ -158,6 +184,7 @@ app.add_handler(MessageHandler(filters.ANIMATION, handle_animation))
 app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://i\.redd\.it/"), handle_direct_reddit_image))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_reddit_link))
 app.add_handler(MessageHandler(~(filters.PHOTO | filters.VIDEO | filters.ANIMATION | filters.TEXT & ~filters.COMMAND), handle_unknown))
+app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://(www\.)?redgifs\.com/users/"), handle_redgifs_user))
 
 app.run_polling()
 
