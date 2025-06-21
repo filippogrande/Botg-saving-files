@@ -64,15 +64,19 @@ async def handle_reddit_link(update: Update, context: ContextTypes.DEFAULT_TYPE)
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         # Gestione galleria immagini
         if hasattr(submission, 'is_gallery') and submission.is_gallery:
-            for idx, item in enumerate(submission.gallery_data['items']):
-                media_id = item['media_id']
-                media_url = submission.media_metadata[media_id]['s']['u']
-                ext = os.path.splitext(media_url)[1].split('?')[0]
-                filename = f"{SAVE_DIR}/{author}_{submission.id}_{timestamp}_{idx}{ext}"
-                r = requests.get(media_url, timeout=20)
-                with open(filename, 'wb') as f:
-                    f.write(r.content)
-            await update.message.reply_text(f"{len(submission.gallery_data['items'])} immagini Reddit salvate!")
+            if hasattr(submission, 'gallery_data') and hasattr(submission, 'media_metadata'):
+                for idx, item in enumerate(submission.gallery_data['items']):
+                    media_id = item['media_id']
+                    media_url = submission.media_metadata[media_id]['s']['u']
+                    ext = os.path.splitext(media_url)[1].split('?')[0]
+                    filename = f"{SAVE_DIR}/{author}_{submission.id}_{timestamp}_{idx}{ext}"
+                    r = requests.get(media_url, timeout=20)
+                    with open(filename, 'wb') as f:
+                        f.write(r.content)
+                await update.message.reply_text(f"{len(submission.gallery_data['items'])} immagini Reddit salvate!")
+            else:
+                await update.message.reply_text("Il post sembra una galleria ma non sono riuscito a recuperare i dati delle immagini (gallery_data o media_metadata mancanti).")
+                return
         # Gestione immagini singole
         elif hasattr(submission, 'post_hint') and submission.post_hint == 'image':
             media_url = submission.url
