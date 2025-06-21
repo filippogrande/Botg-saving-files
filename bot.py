@@ -3,7 +3,7 @@ import os
 from datetime import datetime
 
 # === CONFIGURA QUI ===
-TOKEN = 'inserisci_il_tuo_token_telegram'  # Sostituisci con il token del tuo bot
+TOKEN = '7564134479: AAHKqBkapm75YYJoYRBzSINLFQskmbC-LcY'  # Sostituisci con il token del tuo bot
 SAVE_DIR = '/mnt/truenas_share'  # Punto di mount della condivisione TrueNAS
 
 def handle_message(update, context):
