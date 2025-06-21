@@ -112,21 +112,35 @@ async def handle_reddit_link(update: Update, context: ContextTypes.DEFAULT_TYPE)
             if provider.lower() == 'redgifs':
                 try:
                     import re as _re
+                    import json as _json
                     redgifs_url = submission.url
                     page = requests.get(redgifs_url, timeout=20).text
-                    # Prova varie regex per trovare il link mp4
-                    match = _re.search(r'source src="(https://[^"]+\.mp4)"', page)
-                    if not match:
-                        match = _re.search(r'"mp4Source":"(https://[^"]+\.mp4)"', page)
-                    if not match:
-                        match = _re.search(r'"hdSrc":"(https://[^"]+\.mp4)"', page)
-                    if not match:
-                        match = _re.search(r'"urls":\{"hd":"(https://[^"]+\.mp4)"', page)
-                    # Nuova regex: cerca "mp4":"(https://...mp4)"
-                    if not match:
-                        match = _re.search(r'"mp4":"(https://[^"]+\.mp4)"', page)
-                    if match:
-                        video_url = match.group(1).replace('\\u0026', '&')
+                    # Cerca blocco JSON window.__INITIAL_STATE__
+                    state_match = _re.search(r'window\.__INITIAL_STATE__\s*=\s*(\{.*?\});', page, _re.DOTALL)
+                    video_url = None
+                    if state_match:
+                        try:
+                            state_json = _json.loads(state_match.group(1))
+                            # Cerca la chiave mp4 nel JSON
+                            for v in _re.findall(r'https://[^"]+\.mp4', _json.dumps(state_json)):
+                                video_url = v
+                                break
+                        except Exception as e:
+                            pass
+                    # Se non trovato nel JSON, prova regex classiche
+                    if not video_url:
+                        match = _re.search(r'source src="(https://[^"]+\.mp4)"', page)
+                        if not match:
+                            match = _re.search(r'"mp4Source":"(https://[^"]+\.mp4)"', page)
+                        if not match:
+                            match = _re.search(r'"hdSrc":"(https://[^"]+\.mp4)"', page)
+                        if not match:
+                            match = _re.search(r'"urls":\{"hd":"(https://[^"]+\.mp4)"', page)
+                        if not match:
+                            match = _re.search(r'"mp4":"(https://[^"]+\.mp4)"', page)
+                        if match:
+                            video_url = match.group(1).replace('\\u0026', '&')
+                    if video_url:
                         ext = ".mp4"
                         filename = f"{SAVE_DIR}/{author}_{submission.id}_{timestamp}_redgifs{ext}"
                         r = requests.get(video_url, timeout=20)
@@ -135,7 +149,7 @@ async def handle_reddit_link(update: Update, context: ContextTypes.DEFAULT_TYPE)
                         await update.message.reply_text(f"Video Redgifs salvato come {os.path.basename(filename)}!\nURL: {video_url}")
                         return
                     else:
-                        await update.message.reply_text(f"Non sono riuscito a trovare il video Redgifs diretto (regex aggiornata, nessun match trovato).\nLink Redgifs: {redgifs_url}")
+                        await update.message.reply_text(f"Non sono riuscito a trovare il video Redgifs diretto (anche nel JSON della pagina).\nLink Redgifs: {redgifs_url}")
                         return
                 except Exception as e:
                     await update.message.reply_text(f"Errore durante il download del video Redgifs: {e}")
