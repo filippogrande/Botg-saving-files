@@ -165,6 +165,10 @@ async def handle_redgifs_user(update: Update, context: ContextTypes.DEFAULT_TYPE
     only_photo = text.lower().startswith("solo foto")
     ultimi_match = _re.match(r"ultimi (\d+) post", text.lower())
     ultimi_n = int(ultimi_match.group(1)) if ultimi_match else None
+    # Controllo comando valido
+    if (text.lower().startswith("solo ") and not (only_video or only_photo)) or (text.lower().startswith("ultimi") and not ultimi_match):
+        await update.message.reply_text("Comando non riconosciuto. Usa solo video, solo foto, ultimi N post o solo il link utente Redgifs.")
+        return
     await update.message.reply_text(f"Inizio a scaricare i media pubblici di: {username}. Potrebbe volerci molto tempo...")
     user_url = f"https://www.redgifs.com/users/{username}/creations"
     ydl_opts = {
