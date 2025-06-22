@@ -189,6 +189,31 @@ async def handle_redgifs_user(update: Update, context: ContextTypes.DEFAULT_TYPE
     except Exception as e:
         await update.message.reply_text(f"Errore durante il download dei video Redgifs dell'utente {username}: {e}")
 
+async def handle_redgifs_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    import yt_dlp
+    import re as _re
+    text = update.message.text
+    video_pattern = r"https?://(www\.)?redgifs\.com/watch/[\w\d_-]+"
+    match = _re.search(video_pattern, text)
+    if not match:
+        await update.message.reply_text("Non ho riconosciuto un link video Redgifs valido.")
+        return
+    video_url = match.group(0)
+    await update.message.reply_text(f"Scarico il video Redgifs: {video_url}")
+    filename = f"{SAVE_DIR}/redgifs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
+    ydl_opts = {
+        'outtmpl': filename,
+        'format': 'mp4/bestvideo+bestaudio/best',
+        'quiet': True,
+        'merge_output_format': 'mp4',
+    }
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([video_url])
+        await update.message.reply_text(f"Video Redgifs scaricato e salvato come {os.path.basename(filename)}!")
+    except Exception as e:
+        await update.message.reply_text(f"Errore durante il download del video Redgifs: {e}")
+
 app = ApplicationBuilder().token("7564134479:AAHKqBkapm75YYJoYRBzS1NLFQskmbC-LcY").build()
 
 app.add_handler(CommandHandler("hello", hello))
@@ -197,6 +222,7 @@ app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 app.add_handler(MessageHandler(filters.VIDEO, handle_video))
 app.add_handler(MessageHandler(filters.ANIMATION, handle_animation))
 app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://(www\.)?redgifs\.com/users/"), handle_redgifs_user))
+app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://(www\.)?redgifs\.com/watch/"), handle_redgifs_video))
 app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://i\.redd\.it/"), handle_direct_reddit_image))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_reddit_link))
 app.add_handler(MessageHandler(~(filters.PHOTO | filters.VIDEO | filters.ANIMATION | filters.TEXT & ~filters.COMMAND), handle_unknown))
