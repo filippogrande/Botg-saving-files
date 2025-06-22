@@ -192,8 +192,14 @@ async def handle_redgifs_user(update: Update, context: ContextTypes.DEFAULT_TYPE
         last_update = time.time()
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(user_url, download=False)
-            if not info or 'entries' not in info or not info['entries']:
-                await update.message.reply_text(f"Nessun media trovato o impossibile estrarre i media dal profilo {username}.")
+            if not info:
+                await update.message.reply_text(f"yt-dlp non ha restituito info per il profilo {username}. info=None")
+                return
+            if 'entries' not in info:
+                await update.message.reply_text(f"yt-dlp info non contiene 'entries' per il profilo {username}. info: {info}")
+                return
+            if not info['entries']:
+                await update.message.reply_text(f"Nessun media trovato nel profilo {username}. info['entries'] è vuoto.")
                 return
             entries = info['entries']
             if ultimi_n:
