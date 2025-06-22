@@ -169,7 +169,15 @@ async def handle_redgifs_user(update: Update, context: ContextTypes.DEFAULT_TYPE
     if (text.lower().startswith("solo ") and not (only_video or only_photo)) or (text.lower().startswith("ultimi") and not ultimi_match):
         await update.message.reply_text("Comando non riconosciuto. Usa solo video, solo foto, ultimi N post o solo il link utente Redgifs.")
         return
-    await update.message.reply_text(f"Inizio a scaricare i media pubblici di: {username}. Potrebbe volerci molto tempo...")
+    # Messaggio di avvio con dettaglio comando
+    if only_video:
+        await update.message.reply_text(f"Inizio a scaricare SOLO i video pubblici di: {username}. Potrebbe volerci molto tempo...")
+    elif only_photo:
+        await update.message.reply_text(f"Inizio a scaricare SOLO le foto pubbliche di: {username}. Potrebbe volerci molto tempo...")
+    elif ultimi_n:
+        await update.message.reply_text(f"Inizio a scaricare gli ultimi {ultimi_n} media pubblici di: {username}. Potrebbe volerci molto tempo...")
+    else:
+        await update.message.reply_text(f"Inizio a scaricare TUTTI i media pubblici di: {username}. Potrebbe volerci molto tempo...")
     user_url = f"https://www.redgifs.com/users/{username}/creations"
     ydl_opts = {
         'outtmpl': f"{SAVE_DIR}/redgifs_{username}_%(title)s.%(ext)s",
@@ -184,28 +192,35 @@ async def handle_redgifs_user(update: Update, context: ContextTypes.DEFAULT_TYPE
         last_update = time.time()
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(user_url, download=False)
-            entries = info.get('entries', [])
+            if not info or 'entries' not in info or not info['entries']:
+                await update.message.reply_text(f"Nessun media trovato o impossibile estrarre i media dal profilo {username}.")
+                return
+            entries = info['entries']
             if ultimi_n:
                 entries = entries[:ultimi_n]
             for idx, entry in enumerate(entries):
                 video_url = entry.get('url')
-                if video_url:
-                    is_photo = any(video_url.endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.webp'])
-                    is_video = not is_photo
-                    if only_photo and not is_photo:
-                        continue
-                    if only_video and not is_video:
-                        continue
-                    if is_photo:
-                        ext_img = os.path.splitext(video_url)[1].split('?')[0]
-                        img_filename = f"{SAVE_DIR}/redgifs_{username}_{idx}{ext_img}"
+                if not video_url:
+                    continue
+                is_photo = any(video_url.endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.webp'])
+                is_video = not is_photo
+                if only_photo and not is_photo:
+                    continue
+                if only_video and not is_video:
+                    continue
+                if is_photo:
+                    ext_img = os.path.splitext(video_url)[1].split('?')[0]
+                    img_filename = f"{SAVE_DIR}/redgifs_{username}_{idx}{ext_img}"
+                    try:
                         r = requests.get(video_url, timeout=20)
                         with open(img_filename, 'wb') as f:
                             f.write(r.content)
                         await update.message.reply_text(f"Immagine Redgifs salvata come {os.path.basename(img_filename)}!")
-                    else:
-                        ydl.download([video_url])
-                        await asyncio.sleep(2)
+                    except Exception as e:
+                        await update.message.reply_text(f"Errore durante il download dell'immagine: {e}")
+                else:
+                    ydl.download([video_url])
+                    await asyncio.sleep(2)
                 # Ogni 30 minuti invia un messaggio di stato
                 if time.time() - last_update > 1800:
                     await update.message.reply_text(f"Sto ancora scaricando i media di {username} in background...")
