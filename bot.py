@@ -199,42 +199,39 @@ async def handle_redgifs_user(update: Update, context: ContextTypes.DEFAULT_TYPE
         # Se richiesto solo foto, termina qui
         if only_photo:
             return
-    # Scarica tutte le immagini vere dai post dell'utente (non solo quelle nella pagina creations)
-    if not only_video:
-        await update.message.reply_text(f"Cerco immagini vere nei post di {username}, potrebbe volerci molto tempo...")
-        import re as _re
-        user_url = f"https://www.redgifs.com/users/{username}/creations"
-        try:
-            page = requests.get(user_url, timeout=20).text
-            # Trova tutti i link ai post dell'utente
-            post_links = _re.findall(r'https://www\.redgifs\.com/watch/[\w\d_-]+', page)
-            img_count = 0
-            for idx, post_url in enumerate(set(post_links)):
-                await asyncio.sleep(2)  # Delay tra le richieste ai post
-                post_page = requests.get(post_url, timeout=10).text
-                # Cerca immagini vere (jpg/png/webp) nella pagina del post
-                img_match = _re.search(r'(https://[\w\d\./_-]+\.(?:jpg|jpeg|png|webp))', post_page)
-                if img_match:
-                    img_url = img_match.group(1)
-                    ext_img = os.path.splitext(img_url)[1].split('?')[0]
-                    img_filename = f"{SAVE_DIR}/redgifs_{username}_{idx}{ext_img}"
-                    try:
-                        await asyncio.sleep(2)  # Delay tra i download delle immagini
-                        r = requests.get(img_url, timeout=10)
-                        with open(img_filename, 'wb') as f:
-                            f.write(r.content)
-                        img_count += 1
-                        await update.message.reply_text(f"Immagine Redgifs salvata come {os.path.basename(img_filename)}!")
-                    except Exception as e:
-                        await update.message.reply_text(f"Errore durante il download dell'immagine: {e}")
-            if img_count == 0:
-                await update.message.reply_text(f"Nessuna immagine trovata nei post del profilo {username}.")
-            else:
-                await update.message.reply_text(f"Download di {img_count} immagini dai post di {username} completato.")
-        except Exception as e:
-            await update.message.reply_text(f"Errore durante lo scraping delle immagini dai post Redgifs: {e}")
-        if only_photo:
-            return
+    # Scarica tutte le immagini vere dai post dell'utente (sia per solo foto che per tutto)
+    await update.message.reply_text(f"Cerco immagini vere nei post di {username}, potrebbe volerci molto tempo...")
+    import re as _re
+    user_url = f"https://www.redgifs.com/users/{username}/creations"
+    try:
+        page = requests.get(user_url, timeout=10).text
+        post_links = _re.findall(r'https://www\.redgifs\.com/watch/[\w\d_-]+', page)
+        img_count = 0
+        for idx, post_url in enumerate(set(post_links)):
+            await asyncio.sleep(2)
+            post_page = requests.get(post_url, timeout=10).text
+            img_match = _re.search(r'(https://[\w\d\./_-]+\.(?:jpg|jpeg|png|webp))', post_page)
+            if img_match:
+                img_url = img_match.group(1)
+                ext_img = os.path.splitext(img_url)[1].split('?')[0]
+                img_filename = f"{SAVE_DIR}/redgifs_{username}_{idx}{ext_img}"
+                try:
+                    await asyncio.sleep(2)
+                    r = requests.get(img_url, timeout=10)
+                    with open(img_filename, 'wb') as f:
+                        f.write(r.content)
+                    img_count += 1
+                    await update.message.reply_text(f"Immagine Redgifs salvata come {os.path.basename(img_filename)}!")
+                except Exception as e:
+                    await update.message.reply_text(f"Errore durante il download dell'immagine: {e}")
+        if img_count == 0:
+            await update.message.reply_text(f"Nessuna immagine trovata nei post del profilo {username}.")
+        else:
+            await update.message.reply_text(f"Download di {img_count} immagini dai post di {username} completato.")
+    except Exception as e:
+        await update.message.reply_text(f"Errore durante lo scraping delle immagini dai post Redgifs: {e}")
+    if only_photo:
+        return
     # Per i video usa yt-dlp
     if only_video or ultimi_n or not (only_video or only_photo or ultimi_n):
         await update.message.reply_text(f"Inizio a scaricare i video pubblici di: {username}. Potrebbe volerci molto tempo...")
