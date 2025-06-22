@@ -213,11 +213,6 @@ async def handle_redgifs_user(update: Update, context: ContextTypes.DEFAULT_TYPE
                     await update.message.reply_text(f"Attenzione: entry senza url in posizione {idx} (profilo {username}). entry: {entry}")
                     continue
                 is_photo = any(video_url.endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.webp'])
-                is_video = not is_photo
-                if only_photo and not is_photo:
-                    continue
-                if only_video and not is_video:
-                    continue
                 if is_photo:
                     ext_img = os.path.splitext(video_url)[1].split('?')[0]
                     img_filename = f"{SAVE_DIR}/redgifs_{username}_{idx}{ext_img}"
@@ -229,8 +224,11 @@ async def handle_redgifs_user(update: Update, context: ContextTypes.DEFAULT_TYPE
                     except Exception as e:
                         await update.message.reply_text(f"Errore durante il download dell'immagine: {e}")
                 else:
-                    ydl.download([video_url])
-                    await asyncio.sleep(2)
+                    try:
+                        ydl.download([video_url])
+                        await asyncio.sleep(2)
+                    except Exception as e:
+                        await update.message.reply_text(f"Errore durante il download del video: {e}")
                 # Ogni 30 minuti invia un messaggio di stato
                 if time.time() - last_update > 1800:
                     await update.message.reply_text(f"Sto ancora scaricando i media di {username} in background...")
