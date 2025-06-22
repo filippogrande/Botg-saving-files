@@ -205,8 +205,12 @@ async def handle_redgifs_user(update: Update, context: ContextTypes.DEFAULT_TYPE
             if ultimi_n:
                 entries = entries[:ultimi_n]
             for idx, entry in enumerate(entries):
-                video_url = entry.get('url')
+                if entry is None:
+                    await update.message.reply_text(f"Attenzione: entry None in posizione {idx} (profilo {username}). Salto.")
+                    continue
+                video_url = entry.get('url') if isinstance(entry, dict) else None
                 if not video_url:
+                    await update.message.reply_text(f"Attenzione: entry senza url in posizione {idx} (profilo {username}). entry: {entry}")
                     continue
                 is_photo = any(video_url.endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.webp'])
                 is_video = not is_photo
