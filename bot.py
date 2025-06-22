@@ -153,14 +153,19 @@ async def handle_redgifs_user(update: Update, context: ContextTypes.DEFAULT_TYPE
     import re as _re
     import asyncio
     import time
-    text = update.message.text
+    text = update.message.text.strip()
     user_pattern = r"https?://(www\.)?redgifs\.com/users/([\w\d_-]+)"
     match = _re.search(user_pattern, text)
     if not match:
         await update.message.reply_text("Non ho riconosciuto un link utente Redgifs valido.")
         return
     username = match.group(2)
-    await update.message.reply_text(f"Inizio a scaricare i video pubblici di: {username}. Potrebbe volerci molto tempo...")
+    # Opzioni personalizzate
+    only_video = text.lower().startswith("solo video")
+    only_photo = text.lower().startswith("solo foto")
+    ultimi_match = _re.match(r"ultimi (\d+) post", text.lower())
+    ultimi_n = int(ultimi_match.group(1)) if ultimi_match else None
+    await update.message.reply_text(f"Inizio a scaricare i media pubblici di: {username}. Potrebbe volerci molto tempo...")
     user_url = f"https://www.redgifs.com/users/{username}/creations"
     ydl_opts = {
         'outtmpl': f"{SAVE_DIR}/redgifs_{username}_%(title)s.%(ext)s",
@@ -176,18 +181,34 @@ async def handle_redgifs_user(update: Update, context: ContextTypes.DEFAULT_TYPE
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(user_url, download=False)
             entries = info.get('entries', [])
+            if ultimi_n:
+                entries = entries[:ultimi_n]
             for idx, entry in enumerate(entries):
                 video_url = entry.get('url')
                 if video_url:
-                    ydl.download([video_url])
-                    await asyncio.sleep(2)  # Attendi 2 secondi tra un download e l'altro
+                    is_photo = any(video_url.endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.webp'])
+                    is_video = not is_photo
+                    if only_photo and not is_photo:
+                        continue
+                    if only_video and not is_video:
+                        continue
+                    if is_photo:
+                        ext_img = os.path.splitext(video_url)[1].split('?')[0]
+                        img_filename = f"{SAVE_DIR}/redgifs_{username}_{idx}{ext_img}"
+                        r = requests.get(video_url, timeout=20)
+                        with open(img_filename, 'wb') as f:
+                            f.write(r.content)
+                        await update.message.reply_text(f"Immagine Redgifs salvata come {os.path.basename(img_filename)}!")
+                    else:
+                        ydl.download([video_url])
+                        await asyncio.sleep(2)
                 # Ogni 30 minuti invia un messaggio di stato
                 if time.time() - last_update > 1800:
-                    await update.message.reply_text(f"Sto ancora scaricando i video di {username} in background...")
+                    await update.message.reply_text(f"Sto ancora scaricando i media di {username} in background...")
                     last_update = time.time()
-        await update.message.reply_text(f"Download dei video di {username} completato.")
+        await update.message.reply_text(f"Download dei media di {username} completato.")
     except Exception as e:
-        await update.message.reply_text(f"Errore durante il download dei video Redgifs dell'utente {username}: {e}")
+        await update.message.reply_text(f"Errore durante il download dei media Redgifs dell'utente {username}: {e}")
 
 async def handle_redgifs_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     import yt_dlp
