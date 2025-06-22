@@ -5,6 +5,7 @@ from datetime import datetime
 import re
 import requests
 import asyncpraw
+from redgifs_helper import download_redgifs_profile, download_redgifs_auto
 
 SAVE_DIR = "/mnt/truenas-bot"
 os.makedirs(SAVE_DIR, exist_ok=True)
@@ -148,18 +149,11 @@ async def handle_unknown(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg_type = update.message.effective_attachment or update.message.text or 'messaggio non identificato'
     await update.message.reply_text(f"Il tipo di file o messaggio che hai inviato non è supportato dal bot.\nTipo ricevuto: {type(msg_type).__name__}")
 
-async def handle_redgifs_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    import yt_dlp
+async def handle_redgifs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     import re as _re
-    import asyncio
-    import time
     text = update.message.text.strip()
     user_pattern = r"https?://(www\.)?redgifs\.com/users/([\w\d_-]+)"
-    match = _re.search(user_pattern, text)
-    if not match:
-        await update.message.reply_text("Non ho riconosciuto un link utente Redgifs valido.")
-        return
-    username = match.group(2)
+    post_pattern = r"https?://(www\.)?redgifs\.com/watch/[\w\d_-]+"
     # Opzioni personalizzate
     only_video = text.lower().startswith("solo video")
     only_photo = text.lower().startswith("solo foto")
@@ -169,105 +163,30 @@ async def handle_redgifs_user(update: Update, context: ContextTypes.DEFAULT_TYPE
     if (text.lower().startswith("solo ") and not (only_video or only_photo)) or (text.lower().startswith("ultimi") and not ultimi_match):
         await update.message.reply_text("Comando non riconosciuto. Usa solo video, solo foto, ultimi N post o solo il link utente Redgifs.")
         return
-    # Messaggio di avvio con dettaglio comando
-    if only_video:
-        await update.message.reply_text(f"Inizio a scaricare SOLO i video pubblici di: {username}. Potrebbe volerci molto tempo...")
-    elif only_photo:
-        await update.message.reply_text(f"Inizio a scaricare SOLO le foto pubbliche di: {username}. Potrebbe volerci molto tempo...")
-        import re as _re
-        user_url = f"https://www.redgifs.com/users/{username}/creations"
-        try:
-            page = requests.get(user_url, timeout=20).text
-            # Cerca tutte le immagini jpg/png/webp nella pagina
-            img_urls = _re.findall(r'(https://[\w\d\./_-]+\.(?:jpg|jpeg|png|webp))', page)
-            if img_urls:
-                for idx, img_url in enumerate(set(img_urls)):
-                    ext_img = os.path.splitext(img_url)[1].split('?')[0]
-                    img_filename = f"{SAVE_DIR}/redgifs_{username}_{idx}{ext_img}"
-                    try:
-                        r = requests.get(img_url, timeout=20)
-                        with open(img_filename, 'wb') as f:
-                            f.write(r.content)
-                        await update.message.reply_text(f"Immagine Redgifs salvata come {os.path.basename(img_filename)}!")
-                    except Exception as e:
-                        await update.message.reply_text(f"Errore durante il download dell'immagine: {e}")
-                await update.message.reply_text(f"Download delle foto di {username} completato.")
-            else:
-                await update.message.reply_text(f"Nessuna immagine trovata nel profilo {username}.")
-        except Exception as e:
-            await update.message.reply_text(f"Errore durante lo scraping delle foto Redgifs: {e}")
-        # Se richiesto solo foto, termina qui
-        if only_photo:
-            return
-    # Per i video usa yt-dlp
-    if only_video or ultimi_n or not (only_video or only_photo or ultimi_n):
-        await update.message.reply_text(f"Inizio a scaricare i video pubblici di: {username}. Potrebbe volerci molto tempo...")
-        import yt_dlp
-        import asyncio
-        ydl_opts = {
-            'outtmpl': f"{SAVE_DIR}/redgifs_{username}_%(title)s.%(ext)s",
-            'format': 'mp4/bestvideo+bestaudio/best',
-            'quiet': True,
-            'merge_output_format': 'mp4',
-            'ignoreerrors': True,
-            'extract_flat': True,
-            'force_generic_extractor': True,
-        }
-        try:
-            last_update = time.time()
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(user_url, download=False)
-                if not info or 'entries' not in info or not info['entries']:
-                    await update.message.reply_text(f"Nessun video trovato nel profilo {username}.")
-                    return
-                entries = info['entries']
-                if ultimi_n:
-                    entries = entries[:ultimi_n]
-                for idx, entry in enumerate(entries):
-                    if entry is None:
-                        continue
-                    video_url = entry.get('url') if isinstance(entry, dict) else None
-                    if not video_url:
-                        continue
-                    is_photo = any(video_url.endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.webp'])
-                    if is_photo:
-                        continue  # Le foto sono già state scaricate sopra
-                    try:
-                        ydl.download([video_url])
-                        await asyncio.sleep(2)
-                    except Exception as e:
-                        await update.message.reply_text(f"Errore durante il download del video: {e}")
-                    if time.time() - last_update > 1800:
-                        await update.message.reply_text(f"Sto ancora scaricando i video di {username} in background...")
-                        last_update = time.time()
-            await update.message.reply_text(f"Download dei video di {username} completato.")
-        except Exception as e:
-            await update.message.reply_text(f"Errore durante il download dei video Redgifs dell'utente {username}: {e}")
-
-async def handle_redgifs_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    import yt_dlp
-    import re as _re
-    text = update.message.text
-    video_pattern = r"https?://(www\.)?redgifs\.com/watch/[\w\d_-]+"
-    match = _re.search(video_pattern, text)
-    if not match:
-        await update.message.reply_text("Non ho riconosciuto un link video Redgifs valido.")
+    # Gestione profilo utente
+    user_match = _re.search(user_pattern, text)
+    if user_match:
+        username = user_match.group(2)
+        await update.message.reply_text(f"Inizio a scaricare dal profilo {username}. Potrebbe volerci molto tempo...")
+        allow_video = not only_photo
+        allow_photo = not only_video
+        max_posts = ultimi_n if ultimi_n else None
+        results = download_redgifs_profile(username, SAVE_DIR, max_posts=max_posts, allow_video=allow_video, allow_photo=allow_photo)
+        await update.message.reply_text(f"Download completato. File salvati: {len(results)}")
         return
-    video_url = match.group(0)
-    await update.message.reply_text(f"Scarico il video Redgifs: {video_url}")
-    filename = f"{SAVE_DIR}/redgifs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
-    ydl_opts = {
-        'outtmpl': filename,
-        'format': 'mp4/bestvideo+bestaudio/best',
-        'quiet': True,
-        'merge_output_format': 'mp4',
-    }
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([video_url])
-        await update.message.reply_text(f"Video Redgifs scaricato e salvato come {os.path.basename(filename)}!")
-    except Exception as e:
-        await update.message.reply_text(f"Errore durante il download del video Redgifs: {e}")
+    # Gestione singolo post
+    post_match = _re.search(post_pattern, text)
+    if post_match:
+        await update.message.reply_text("Inizio a scaricare il post Redgifs...")
+        allow_video = not only_photo
+        allow_photo = not only_video
+        file_path = download_redgifs_auto(post_match.group(0), SAVE_DIR, allow_video=allow_video, allow_photo=allow_photo)
+        if file_path:
+            await update.message.reply_text(f"File Redgifs scaricato e salvato come {os.path.basename(file_path)}!")
+        else:
+            await update.message.reply_text("Nessun file scaricabile trovato nel post Redgifs.")
+        return
+    await update.message.reply_text("Non ho riconosciuto un link Redgifs valido.")
 
 app = ApplicationBuilder().token("7564134479:AAHKqBkapm75YYJoYRBzS1NLFQskmbC-LcY").build()
 
@@ -276,8 +195,7 @@ app.add_handler(CommandHandler("start", start))
 app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 app.add_handler(MessageHandler(filters.VIDEO, handle_video))
 app.add_handler(MessageHandler(filters.ANIMATION, handle_animation))
-app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://(www\.)?redgifs\.com/users/"), handle_redgifs_user))
-app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://(www\.)?redgifs\.com/watch/"), handle_redgifs_video))
+app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://(www\.)?redgifs\.com/(users|watch)/"), handle_redgifs))
 app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://i\.redd\.it/"), handle_direct_reddit_image))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_reddit_link))
 app.add_handler(MessageHandler(~(filters.PHOTO | filters.VIDEO | filters.ANIMATION | filters.TEXT & ~filters.COMMAND), handle_unknown))
