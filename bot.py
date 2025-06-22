@@ -174,67 +174,75 @@ async def handle_redgifs_user(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text(f"Inizio a scaricare SOLO i video pubblici di: {username}. Potrebbe volerci molto tempo...")
     elif only_photo:
         await update.message.reply_text(f"Inizio a scaricare SOLO le foto pubbliche di: {username}. Potrebbe volerci molto tempo...")
-    elif ultimi_n:
-        await update.message.reply_text(f"Inizio a scaricare gli ultimi {ultimi_n} media pubblici di: {username}. Potrebbe volerci molto tempo...")
-    else:
-        await update.message.reply_text(f"Inizio a scaricare TUTTI i media pubblici di: {username}. Potrebbe volerci molto tempo...")
-    user_url = f"https://www.redgifs.com/users/{username}/creations"
-    ydl_opts = {
-        'outtmpl': f"{SAVE_DIR}/redgifs_{username}_%(title)s.%(ext)s",
-        'format': 'mp4/bestvideo+bestaudio/best',
-        'quiet': True,
-        'merge_output_format': 'mp4',
-        'ignoreerrors': True,
-        'extract_flat': True,
-        'force_generic_extractor': True,
-    }
-    try:
-        last_update = time.time()
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(user_url, download=False)
-            if not info:
-                await update.message.reply_text(f"yt-dlp non ha restituito info per il profilo {username}. info=None")
-                return
-            if 'entries' not in info:
-                await update.message.reply_text(f"yt-dlp info non contiene 'entries' per il profilo {username}. info: {info}")
-                return
-            if not info['entries']:
-                await update.message.reply_text(f"Nessun media trovato nel profilo {username}. info['entries'] è vuoto.")
-                return
-            entries = info['entries']
-            if ultimi_n:
-                entries = entries[:ultimi_n]
-            for idx, entry in enumerate(entries):
-                if entry is None:
-                    # Salta semplicemente i post con entry None senza inviare messaggi
-                    continue
-                video_url = entry.get('url') if isinstance(entry, dict) else None
-                if not video_url:
-                    continue
-                is_photo = any(video_url.endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.webp'])
-                if is_photo:
-                    ext_img = os.path.splitext(video_url)[1].split('?')[0]
+        import re as _re
+        user_url = f"https://www.redgifs.com/users/{username}/creations"
+        try:
+            page = requests.get(user_url, timeout=20).text
+            # Cerca tutte le immagini jpg/png/webp nella pagina
+            img_urls = _re.findall(r'(https://[\w\d\./_-]+\.(?:jpg|jpeg|png|webp))', page)
+            if img_urls:
+                for idx, img_url in enumerate(set(img_urls)):
+                    ext_img = os.path.splitext(img_url)[1].split('?')[0]
                     img_filename = f"{SAVE_DIR}/redgifs_{username}_{idx}{ext_img}"
                     try:
-                        r = requests.get(video_url, timeout=20)
+                        r = requests.get(img_url, timeout=20)
                         with open(img_filename, 'wb') as f:
                             f.write(r.content)
                         await update.message.reply_text(f"Immagine Redgifs salvata come {os.path.basename(img_filename)}!")
                     except Exception as e:
                         await update.message.reply_text(f"Errore durante il download dell'immagine: {e}")
-                else:
+                await update.message.reply_text(f"Download delle foto di {username} completato.")
+            else:
+                await update.message.reply_text(f"Nessuna immagine trovata nel profilo {username}.")
+        except Exception as e:
+            await update.message.reply_text(f"Errore durante lo scraping delle foto Redgifs: {e}")
+        # Se richiesto solo foto, termina qui
+        if only_photo:
+            return
+    # Per i video usa yt-dlp
+    if only_video or ultimi_n or not (only_video or only_photo or ultimi_n):
+        await update.message.reply_text(f"Inizio a scaricare i video pubblici di: {username}. Potrebbe volerci molto tempo...")
+        import yt_dlp
+        import asyncio
+        ydl_opts = {
+            'outtmpl': f"{SAVE_DIR}/redgifs_{username}_%(title)s.%(ext)s",
+            'format': 'mp4/bestvideo+bestaudio/best',
+            'quiet': True,
+            'merge_output_format': 'mp4',
+            'ignoreerrors': True,
+            'extract_flat': True,
+            'force_generic_extractor': True,
+        }
+        try:
+            last_update = time.time()
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(user_url, download=False)
+                if not info or 'entries' not in info or not info['entries']:
+                    await update.message.reply_text(f"Nessun video trovato nel profilo {username}.")
+                    return
+                entries = info['entries']
+                if ultimi_n:
+                    entries = entries[:ultimi_n]
+                for idx, entry in enumerate(entries):
+                    if entry is None:
+                        continue
+                    video_url = entry.get('url') if isinstance(entry, dict) else None
+                    if not video_url:
+                        continue
+                    is_photo = any(video_url.endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.webp'])
+                    if is_photo:
+                        continue  # Le foto sono già state scaricate sopra
                     try:
                         ydl.download([video_url])
                         await asyncio.sleep(2)
                     except Exception as e:
                         await update.message.reply_text(f"Errore durante il download del video: {e}")
-                # Ogni 30 minuti invia un messaggio di stato
-                if time.time() - last_update > 1800:
-                    await update.message.reply_text(f"Sto ancora scaricando i media di {username} in background...")
-                    last_update = time.time()
-        await update.message.reply_text(f"Download dei media di {username} completato.")
-    except Exception as e:
-        await update.message.reply_text(f"Errore durante il download dei media Redgifs dell'utente {username}: {e}")
+                    if time.time() - last_update > 1800:
+                        await update.message.reply_text(f"Sto ancora scaricando i video di {username} in background...")
+                        last_update = time.time()
+            await update.message.reply_text(f"Download dei video di {username} completato.")
+        except Exception as e:
+            await update.message.reply_text(f"Errore durante il download dei video Redgifs dell'utente {username}: {e}")
 
 async def handle_redgifs_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     import yt_dlp
