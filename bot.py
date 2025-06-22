@@ -199,42 +199,6 @@ async def handle_redgifs_user(update: Update, context: ContextTypes.DEFAULT_TYPE
         # Se richiesto solo foto, termina qui
         if only_photo:
             return
-    # Scarica tutte le immagini vere dai post dell'utente (non solo quelle nella pagina creations)
-    if not only_video:
-        await update.message.reply_text(f"Cerco immagini vere nei post di {username}, potrebbe volerci molto tempo...")
-        import re as _re
-        user_url = f"https://www.redgifs.com/users/{username}/creations"
-        try:
-            page = requests.get(user_url, timeout=20).text
-            # Trova tutti i link ai post dell'utente
-            post_links = _re.findall(r'https://www\.redgifs\.com/watch/[\w\d_-]+', page)
-            img_count = 0
-            for idx, post_url in enumerate(set(post_links)):
-                await asyncio.sleep(2)  # Delay tra le richieste ai post
-                post_page = requests.get(post_url, timeout=10).text
-                # Cerca immagini vere (jpg/png/webp) nella pagina del post
-                img_match = _re.search(r'(https://[\w\d\./_-]+\.(?:jpg|jpeg|png|webp))', post_page)
-                if img_match:
-                    img_url = img_match.group(1)
-                    ext_img = os.path.splitext(img_url)[1].split('?')[0]
-                    img_filename = f"{SAVE_DIR}/redgifs_{username}_{idx}{ext_img}"
-                    try:
-                        await asyncio.sleep(2)  # Delay tra i download delle immagini
-                        r = requests.get(img_url, timeout=10)
-                        with open(img_filename, 'wb') as f:
-                            f.write(r.content)
-                        img_count += 1
-                        await update.message.reply_text(f"Immagine Redgifs salvata come {os.path.basename(img_filename)}!")
-                    except Exception as e:
-                        await update.message.reply_text(f"Errore durante il download dell'immagine: {e}")
-            if img_count == 0:
-                await update.message.reply_text(f"Nessuna immagine trovata nei post del profilo {username}.")
-            else:
-                await update.message.reply_text(f"Download di {img_count} immagini dai post di {username} completato.")
-        except Exception as e:
-            await update.message.reply_text(f"Errore durante lo scraping delle immagini dai post Redgifs: {e}")
-        if only_photo:
-            return
     # Per i video usa yt-dlp
     if only_video or ultimi_n or not (only_video or only_photo or ultimi_n):
         await update.message.reply_text(f"Inizio a scaricare i video pubblici di: {username}. Potrebbe volerci molto tempo...")
@@ -267,17 +231,56 @@ async def handle_redgifs_user(update: Update, context: ContextTypes.DEFAULT_TYPE
                         continue
                     is_photo = any(video_url.endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.webp'])
                     if is_photo:
-                        # Salta i video che sono in realtà foto
-                        continue
-                    video_filename = f"{SAVE_DIR}/redgifs_{username}_{idx}.mp4"
+                        continue  # Le foto sono già state scaricate sopra
                     try:
-                        await asyncio.sleep(2)  # Delay tra i download dei video
-                        r = requests.get(video_url, timeout=10)
-                        with open(video_filename, 'wb') as f:
-                            f.write(r.content)
-                        await update.message.reply_text(f"Video Redgifs salvato come {os.path.basename(video_filename)}!")
+                        ydl.download([video_url])
+                        await asyncio.sleep(2)
                     except Exception as e:
                         await update.message.reply_text(f"Errore durante il download del video: {e}")
+                    if time.time() - last_update > 1800:
+                        await update.message.reply_text(f"Sto ancora scaricando i video di {username} in background...")
+                        last_update = time.time()
+            await update.message.reply_text(f"Download dei video di {username} completato.")
         except Exception as e:
-            await update.message.reply_text(f"Errore durante il download dei video Redgifs: {e}")
+            await update.message.reply_text(f"Errore durante il download dei video Redgifs dell'utente {username}: {e}")
+
+async def handle_redgifs_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    import yt_dlp
+    import re as _re
+    text = update.message.text
+    video_pattern = r"https?://(www\.)?redgifs\.com/watch/[\w\d_-]+"
+    match = _re.search(video_pattern, text)
+    if not match:
+        await update.message.reply_text("Non ho riconosciuto un link video Redgifs valido.")
+        return
+    video_url = match.group(0)
+    await update.message.reply_text(f"Scarico il video Redgifs: {video_url}")
+    filename = f"{SAVE_DIR}/redgifs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
+    ydl_opts = {
+        'outtmpl': filename,
+        'format': 'mp4/bestvideo+bestaudio/best',
+        'quiet': True,
+        'merge_output_format': 'mp4',
+    }
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([video_url])
+        await update.message.reply_text(f"Video Redgifs scaricato e salvato come {os.path.basename(filename)}!")
+    except Exception as e:
+        await update.message.reply_text(f"Errore durante il download del video Redgifs: {e}")
+
+app = ApplicationBuilder().token("7564134479:AAHKqBkapm75YYJoYRBzS1NLFQskmbC-LcY").build()
+
+app.add_handler(CommandHandler("hello", hello))
+app.add_handler(CommandHandler("start", start))
+app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+app.add_handler(MessageHandler(filters.VIDEO, handle_video))
+app.add_handler(MessageHandler(filters.ANIMATION, handle_animation))
+app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://(www\.)?redgifs\.com/users/"), handle_redgifs_user))
+app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://(www\.)?redgifs\.com/watch/"), handle_redgifs_video))
+app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://i\.redd\.it/"), handle_direct_reddit_image))
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_reddit_link))
+app.add_handler(MessageHandler(~(filters.PHOTO | filters.VIDEO | filters.ANIMATION | filters.TEXT & ~filters.COMMAND), handle_unknown))
+
+app.run_polling()
 
