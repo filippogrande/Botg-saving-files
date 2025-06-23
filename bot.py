@@ -111,23 +111,12 @@ async def handle_reddit_link(update: Update, context: ContextTypes.DEFAULT_TYPE)
             provider = submission.media['oembed']['provider_name'] if submission.media and 'oembed' in submission.media and 'provider_name' in submission.media['oembed'] else 'N/A'
             # Gestione Redgifs
             if provider.lower() == 'redgifs':
-                try:
-                    import yt_dlp
-                    redgifs_url = submission.url
-                    filename = f"{SAVE_DIR}/{author}_{submission.id}_{timestamp}_redgifs.mp4"
-                    ydl_opts = {
-                        'outtmpl': filename,
-                        'format': 'mp4/bestvideo+bestaudio/best',
-                        'quiet': True,
-                        'merge_output_format': 'mp4',
-                    }
-                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                        ydl.download([redgifs_url])
-                    await update.message.reply_text(f"Video Redgifs scaricato e salvato come {os.path.basename(filename)}!")
-                    return
-                except Exception as e:
-                    await update.message.reply_text(f"Errore durante il download del video Redgifs con yt-dlp: {e}")
-                    return
+                file_path = download_redgifs_auto(submission.url, SAVE_DIR)
+                if file_path:
+                    await update.message.reply_text(f"Media Redgifs scaricato e salvato come {os.path.basename(file_path)}!")
+                else:
+                    await update.message.reply_text("Errore durante il download del media Redgifs.")
+                return
             await update.message.reply_text(f"Questo post Reddit non contiene immagini o video scaricabili.\npost_hint: {hint}, is_video: {is_video}, provider: {provider}")
     except Exception as e:
         await update.message.reply_text("Errore durante il download del contenuto Reddit.")
