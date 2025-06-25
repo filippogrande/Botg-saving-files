@@ -6,7 +6,21 @@ import re
 import requests
 import asyncpraw
 from redgifs_helper import download_redgifs_profile, download_redgifs_auto
-from mega_helper import download_mega_auto, is_mega_link
+
+# Importazione condizionale per Mega (per evitare errori se la libreria non è disponibile)
+try:
+    from mega_helper import download_mega_auto, is_mega_link
+    MEGA_AVAILABLE = True
+except ImportError as e:
+    print(f"Mega helper non disponibile: {e}")
+    MEGA_AVAILABLE = False
+    
+    # Funzioni placeholder
+    def download_mega_auto(*args, **kwargs):
+        return []
+    
+    def is_mega_link(url):
+        return False
 
 SAVE_DIR = "/mnt/truenas-bot"
 os.makedirs(SAVE_DIR, exist_ok=True)
@@ -182,6 +196,10 @@ async def handle_mega_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Gestisce i link Mega scaricando file o cartelle complete mantenendo la struttura.
     """
+    if not MEGA_AVAILABLE:
+        await update.message.reply_text("❌ Funzionalità Mega temporaneamente non disponibile. Il supporto verrà ripristinato presto.")
+        return
+        
     text = update.message.text.strip()
     
     # Estrai il link Mega dal messaggio
