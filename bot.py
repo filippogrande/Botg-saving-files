@@ -6,6 +6,7 @@ import re
 import requests
 import asyncpraw
 from redgifs_helper import download_redgifs_profile, download_redgifs_auto
+from mega_helper import download_mega_auto, is_mega_link
 
 SAVE_DIR = "/mnt/truenas-bot"
 os.makedirs(SAVE_DIR, exist_ok=True)
@@ -177,17 +178,105 @@ async def handle_redgifs(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await update.message.reply_text("Non ho riconosciuto un link Redgifs valido.")
 
+async def handle_mega_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Gestisce i link Mega scaricando file o cartelle complete mantenendo la struttura.
+    """
+    text = update.message.text.strip()
+    
+    # Estrai il link Mega dal messaggio
+    mega_pattern = r"https?://mega\.nz/(file|folder)/[^#]+#[^\s]+"
+    match = re.search(mega_pattern, text)
+    
+    if not match:
+        await update.message.reply_text("Non ho riconosciuto un link Mega valido.")
+        return
+    
+    mega_url = match.group(0)
+    
+    try:
+        # Determina se preservare la struttura delle cartelle
+        preserve_structure = True
+        custom_prefix = None
+        
+        # Controlla se l'utente ha specificato opzioni particolari
+        if "struttura piatta" in text.lower() or "flat" in text.lower():
+            preserve_structure = False
+            
+        # Controlla se l'utente ha specificato un prefisso personalizzato
+        prefix_match = re.search(r"prefisso:?\s*([^\s]+)", text.lower())
+        if prefix_match:
+            custom_prefix = prefix_match.group(1)
+        
+        await update.message.reply_text("🔄 Inizio il download da Mega... Questo potrebbe richiedere del tempo.")
+        
+        # Esegui il download
+        downloaded_files = download_mega_auto(
+            mega_url, 
+            SAVE_DIR, 
+            custom_prefix=custom_prefix,
+            preserve_structure=preserve_structure
+        )
+        
+        if downloaded_files:
+            file_count = len(downloaded_files)
+            if file_count == 1:
+                filename = os.path.basename(downloaded_files[0])
+                await update.message.reply_text(f"✅ Download completato! File salvato: {filename}")
+            else:
+                await update.message.reply_text(
+                    f"✅ Download completato! Scaricati {file_count} file "
+                    f"{'mantenendo la struttura delle cartelle' if preserve_structure else 'in struttura piatta'}."
+                )
+        else:
+            await update.message.reply_text("❌ Errore durante il download o nessun file trovato.")
+            
+    except Exception as e:
+        await update.message.reply_text(f"❌ Errore durante il download da Mega: {str(e)}")
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    help_text = """
+🤖 **Comandi supportati dal bot:**
+
+📷 **Media diretti:** Invia foto, video, GIF e verranno salvati automaticamente
+
+🔗 **Link supportati:**
+• **Reddit:** Link a post, immagini, video, gallerie
+• **Redgifs:** Link a singoli post o profili utente
+• **Mega:** Link a file singoli o cartelle complete
+
+📁 **Mega - Opzioni speciali:**
+• Invia solo il link per mantenere la struttura delle cartelle
+• Aggiungi "struttura piatta" per scaricare tutto in una cartella
+• Aggiungi "prefisso: nome" per personalizzare il nome dei file
+
+🎯 **Redgifs - Opzioni speciali:**
+• "solo video [link]" - scarica solo i video
+• "solo foto [link]" - scarica solo le immagini  
+• "ultimi N post [link]" - scarica solo gli ultimi N post
+
+📝 **Esempi:**
+• `https://mega.nz/folder/ABC123#xyz789`
+• `struttura piatta https://mega.nz/folder/ABC123#xyz789`
+• `prefisso: miacartella https://mega.nz/folder/ABC123#xyz789`
+"""
+    await update.message.reply_text(help_text, parse_mode='Markdown')
+
 app = ApplicationBuilder().token("7564134479:AAHKqBkapm75YYJoYRBzS1NLFQskmbC-LcY").build()
 
 app.add_handler(CommandHandler("hello", hello))
 app.add_handler(CommandHandler("start", start))
+app.add_handler(CommandHandler("help", help_command))
 app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 app.add_handler(MessageHandler(filters.VIDEO, handle_video))
 app.add_handler(MessageHandler(filters.ANIMATION, handle_animation))
+app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://mega\.nz/(file|folder)/"), handle_mega_link))
 app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://(www\.)?redgifs\.com/(users|watch)/"), handle_redgifs))
 app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://i\.redd\.it/"), handle_direct_reddit_image))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_reddit_link))
 app.add_handler(MessageHandler(~(filters.PHOTO | filters.VIDEO | filters.ANIMATION | filters.TEXT & ~filters.COMMAND), handle_unknown))
+app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://mega\.nz/(file|folder)/"), handle_mega_link))
+app.add_handler(CommandHandler("help", help_command))
 
 app.run_polling()
 
