@@ -1,7 +1,8 @@
 import os
 import re
+import subprocess
 from datetime import datetime
-import yt_dlp
+import shutil
 
 def extract_mega_info(mega_url):
     """
@@ -36,48 +37,142 @@ def sanitize_filename(filename):
         filename = filename.replace(char, '_')
     return filename
 
-def download_mega_file(mega_url, save_dir, custom_prefix=None):
+def check_megatools_installed():
     """
-    Scarica un singolo file da Mega usando yt-dlp.
-    Restituisce il percorso del file scaricato o None in caso di errore.
+    Verifica se megatools è installato nel sistema.
     """
     try:
-        link_type, file_id, key = extract_mega_info(mega_url)
-        if link_type != "file":
-            return None
+        result = subprocess.run(['megadl', '--version'], capture_output=True, text=True)
+        return result.returncode == 0
+    except:
+        return False
+
+def download_with_megatools(mega_url, save_dir, custom_prefix=None):
+    """
+    Usa megatools per scaricare da Mega.
+    """
+    try:
+        if not check_megatools_installed():
+            print("megatools non è installato")
+            return []
             
         # Crea la directory se non esiste
         os.makedirs(save_dir, exist_ok=True)
         
-        # Configura yt-dlp per il download
+        # Crea una directory temporanea per il download
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         if custom_prefix:
-            output_template = f"{save_dir}/{custom_prefix}_{timestamp}_%(title)s.%(ext)s"
+            temp_dir = os.path.join(save_dir, f"{custom_prefix}_temp_{timestamp}")
         else:
-            output_template = f"{save_dir}/mega_{timestamp}_%(title)s.%(ext)s"
+            temp_dir = os.path.join(save_dir, f"mega_temp_{timestamp}")
             
-        ydl_opts = {
-            'outtmpl': output_template,
-            'quiet': True,
-            'no_warnings': True,
-        }
+        os.makedirs(temp_dir, exist_ok=True)
         
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            try:
-                # Estrai informazioni senza scaricare
-                info = ydl.extract_info(mega_url, download=False)
-                if info:
-                    # Ora scarica
-                    ydl.download([mega_url])
+        # Esegui megadl (parte di megatools)
+        cmd = ['megadl', '--path', temp_dir, mega_url]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        
+        downloaded_files = []
+        
+        if result.returncode == 0:
+            # Trova tutti i file scaricati
+            for root, dirs, files in os.walk(temp_dir):
+                for file in files:
+                    src_path = os.path.join(root, file)
                     
-                    # Trova il file scaricato
-                    expected_filename = ydl.prepare_filename(info)
-                    if os.path.exists(expected_filename):
-                        return expected_filename
-            except Exception as e:
-                print(f"Errore yt-dlp per file Mega: {e}")
-                return None
+                    # Calcola il percorso relativo per mantenere la struttura
+                    rel_path = os.path.relpath(src_path, temp_dir)
                     
+                    # Sanitizza il nome del file
+                    sanitized_name = sanitize_filename(rel_path)
+                    
+                    # Crea il nome finale del file
+                    if custom_prefix:
+                        final_name = f"{custom_prefix}_{timestamp}_{sanitized_name}"
+                    else:
+                        final_name = f"mega_{timestamp}_{sanitized_name}"
+                    
+                    final_path = os.path.join(save_dir, final_name)
+                    
+                    # Crea le directory se necessario
+                    os.makedirs(os.path.dirname(final_path), exist_ok=True)
+                    
+                    # Sposta il file
+                    shutil.move(src_path, final_path)
+                    downloaded_files.append(final_path)
+            
+            # Rimuovi la directory temporanea
+            if os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir)
+                
+            return downloaded_files
+        else:
+            print(f"Errore megatools: {result.stderr}")
+            # Rimuovi la directory temporanea in caso di errore
+            if os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir)
+            return []
+            
+    except subprocess.TimeoutExpired:
+        print("Timeout durante il download Mega")
+        return []
+    except Exception as e:
+        print(f"Errore durante il download con megatools: {e}")
+        return []
+
+def download_with_gdown(mega_url, save_dir, custom_prefix=None):
+    """
+    Prova a usare gdown se il link è compatibile.
+    """
+    try:
+        # Verifica se gdown è disponibile
+        import gdown
+        
+        link_type, file_id, key = extract_mega_info(mega_url)
+        if link_type != "file":
+            return []
+            
+        # Crea la directory se non esiste
+        os.makedirs(save_dir, exist_ok=True)
+        
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        if custom_prefix:
+            filename = f"{save_dir}/{custom_prefix}_{timestamp}_mega_file"
+        else:
+            filename = f"{save_dir}/mega_{timestamp}_file"
+        
+        # Prova a scaricare con gdown (funziona solo con alcuni link)
+        output = gdown.download(mega_url, filename, quiet=False)
+        
+        if output and os.path.exists(output) and os.path.getsize(output) > 0:
+            return [output]
+        else:
+            if os.path.exists(filename):
+                os.remove(filename)
+            return []
+            
+    except ImportError:
+        print("gdown non disponibile")
+        return []
+    except Exception as e:
+        print(f"Errore con gdown: {e}")
+        return []
+
+def download_mega_file(mega_url, save_dir, custom_prefix=None):
+    """
+    Scarica un singolo file da Mega usando vari metodi.
+    """
+    try:
+        # Prova prima con megatools
+        result = download_with_megatools(mega_url, save_dir, custom_prefix)
+        if result:
+            return result[0] if len(result) == 1 else result[0]
+            
+        # Fallback con gdown
+        result = download_with_gdown(mega_url, save_dir, custom_prefix)
+        if result:
+            return result[0]
+            
         return None
         
     except Exception as e:
@@ -86,56 +181,47 @@ def download_mega_file(mega_url, save_dir, custom_prefix=None):
 
 def download_mega_folder(mega_url, save_dir, custom_prefix=None, preserve_structure=True):
     """
-    Scarica una cartella da Mega usando yt-dlp.
-    Nota: yt-dlp potrebbe non supportare completamente le cartelle Mega.
+    Scarica una cartella completa da Mega.
     """
     try:
-        link_type, folder_id, key = extract_mega_info(mega_url)
-        if link_type != "folder":
-            return []
-            
-        # Crea la directory base se non esiste
-        os.makedirs(save_dir, exist_ok=True)
-        
-        # Crea una cartella con timestamp per questo download
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        if custom_prefix:
-            folder_name = f"{custom_prefix}_mega_folder_{timestamp}"
-        else:
-            folder_name = f"mega_folder_{timestamp}"
-            
-        download_folder = os.path.join(save_dir, folder_name)
-        os.makedirs(download_folder, exist_ok=True)
-        
-        ydl_opts = {
-            'outtmpl': f"{download_folder}/%(title)s.%(ext)s",
-            'quiet': True,
-            'no_warnings': True,
-        }
-        
-        downloaded_files = []
-        
-        try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                # Prova a scaricare la cartella
-                ydl.download([mega_url])
-                
-                # Trova tutti i file scaricati
-                for root, dirs, files in os.walk(download_folder):
-                    for file in files:
-                        file_path = os.path.join(root, file)
-                        downloaded_files.append(file_path)
-                        
-        except Exception as e:
-            print(f"yt-dlp non è riuscito a scaricare la cartella Mega: {e}")
-            # Le cartelle Mega sono complesse, potrebbe non funzionare sempre
-            return []
-            
-        return downloaded_files
+        # Per le cartelle usiamo solo megatools
+        result = download_with_megatools(mega_url, save_dir, custom_prefix)
+        return result
         
     except Exception as e:
         print(f"Errore durante il download della cartella Mega: {e}")
         return []
+
+def download_mega_auto(mega_url, save_dir, custom_prefix=None, preserve_structure=True):
+    """
+    Determina automaticamente se il link Mega è per un file o una cartella
+    e utilizza il metodo di download appropriato.
+    """
+    try:
+        link_type, _, _ = extract_mega_info(mega_url)
+        
+        if link_type == "file":
+            result = download_mega_file(mega_url, save_dir, custom_prefix)
+            return [result] if result else []
+        elif link_type == "folder":
+            return download_mega_folder(mega_url, save_dir, custom_prefix, preserve_structure)
+        else:
+            print("Link Mega non riconosciuto")
+            return []
+            
+    except Exception as e:
+        print(f"Errore nell'auto-download Mega: {e}")
+        return []
+
+def is_mega_link(url):
+    """
+    Verifica se un URL è un link Mega valido.
+    """
+    mega_pattern = r"https?://mega\.nz/(file|folder)/[^#]+#.+"
+    return bool(re.match(mega_pattern, url))
+
+# Alias per compatibilità
+check_megadown_installed = check_megatools_installed
 
 def download_mega_auto(mega_url, save_dir, custom_prefix=None, preserve_structure=True):
     """

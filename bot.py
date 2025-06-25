@@ -197,7 +197,10 @@ async def handle_mega_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     Gestisce i link Mega scaricando file o cartelle complete mantenendo la struttura.
     """
     if not MEGA_AVAILABLE:
-        await update.message.reply_text("❌ Funzionalità Mega temporaneamente non disponibile. Il supporto verrà ripristinato presto.")
+        await update.message.reply_text(
+            "❌ Funzionalità Mega temporaneamente non disponibile.\n"
+            "Per attivarla, sul server esegui: bash install_megatools.sh"
+        )
         return
         
     text = update.message.text.strip()
@@ -213,6 +216,18 @@ async def handle_mega_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     mega_url = match.group(0)
     
     try:
+        # Verifica se il link è di un file o cartella
+        from mega_helper import extract_mega_info, check_megatools_installed
+        link_type, _, _ = extract_mega_info(mega_url)
+        
+        if not check_megatools_installed():
+            await update.message.reply_text(
+                "❌ Tool 'megatools' non installato sul server.\n"
+                f"Tipo link: {link_type or 'sconosciuto'}\n"
+                "Per installarlo: bash install_megatools.sh"
+            )
+            return
+        
         # Determina se preservare la struttura delle cartelle
         preserve_structure = True
         custom_prefix = None
@@ -226,7 +241,13 @@ async def handle_mega_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if prefix_match:
             custom_prefix = prefix_match.group(1)
         
-        await update.message.reply_text("🔄 Inizio il download da Mega... Questo potrebbe richiedere del tempo.")
+        # Messaggio diverso per file vs cartelle
+        if link_type == "file":
+            await update.message.reply_text("🔄 Inizio il download del file da Mega...")
+        elif link_type == "folder":
+            await update.message.reply_text("🔄 Inizio il download della cartella da Mega... Questo potrebbe richiedere molto tempo.")
+        else:
+            await update.message.reply_text("🔄 Inizio il download da Mega...")
         
         # Esegui il download
         downloaded_files = download_mega_auto(
@@ -247,7 +268,14 @@ async def handle_mega_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"{'mantenendo la struttura delle cartelle' if preserve_structure else 'in struttura piatta'}."
                 )
         else:
-            await update.message.reply_text("❌ Errore durante il download o nessun file trovato.")
+            await update.message.reply_text(
+                "❌ Errore durante il download o nessun file trovato.\n"
+                "Possibili cause:\n"
+                "• Link Mega non valido o scaduto\n"
+                "• File troppo grande\n"
+                "• Problema di connessione\n"
+                "• Tool megadown non funzionante"
+            )
             
     except Exception as e:
         await update.message.reply_text(f"❌ Errore durante il download da Mega: {str(e)}")

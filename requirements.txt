@@ -2,3 +2,4 @@ python-telegram-bot
 asyncpraw
 requests
 yt-dlp
+gdown
