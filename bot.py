@@ -269,12 +269,12 @@ async def handle_mega_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
         else:
             await update.message.reply_text(
-                "❌ Errore durante il download o nessun file trovato.\n"
+                "❌ Errore durante il download da Mega.\n"
                 "Possibili cause:\n"
                 "• Link Mega non valido o scaduto\n"
-                "• File troppo grande\n"
-                "• Problema di connessione\n"
-                "• Tool megadown non funzionante"
+                "• File/cartella troppo grande\n" 
+                "• megatools non installato (esegui: sudo apt install megatools)\n"
+                "• Problema di connessione"
             )
             
     except Exception as e:

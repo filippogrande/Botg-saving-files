@@ -120,95 +120,12 @@ def download_with_megatools(mega_url, save_dir, custom_prefix=None):
         print(f"Errore durante il download con megatools: {e}")
         return []
 
-def download_with_gdown(mega_url, save_dir, custom_prefix=None):
-    """
-    Prova a usare gdown se il link è compatibile.
-    """
-    try:
-        # Verifica se gdown è disponibile
-        import gdown
-        
-        link_type, file_id, key = extract_mega_info(mega_url)
-        if link_type != "file":
-            return []
-            
-        # Crea la directory se non esiste
-        os.makedirs(save_dir, exist_ok=True)
-        
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        if custom_prefix:
-            filename = f"{save_dir}/{custom_prefix}_{timestamp}_mega_file"
-        else:
-            filename = f"{save_dir}/mega_{timestamp}_file"
-        
-        # Prova a scaricare con gdown (funziona solo con alcuni link)
-        output = gdown.download(mega_url, filename, quiet=False)
-        
-        if output and os.path.exists(output) and os.path.getsize(output) > 0:
-            return [output]
-        else:
-            if os.path.exists(filename):
-                os.remove(filename)
-            return []
-            
-    except ImportError:
-        print("gdown non disponibile")
-        return []
-    except Exception as e:
-        print(f"Errore con gdown: {e}")
-        return []
-
-def download_mega_file(mega_url, save_dir, custom_prefix=None):
-    """
-    Scarica un singolo file da Mega usando vari metodi.
-    """
-    try:
-        # Prova prima con megatools
-        result = download_with_megatools(mega_url, save_dir, custom_prefix)
-        if result:
-            return result[0] if len(result) == 1 else result[0]
-            
-        # Fallback con gdown
-        result = download_with_gdown(mega_url, save_dir, custom_prefix)
-        if result:
-            return result[0]
-            
-        return None
-        
-    except Exception as e:
-        print(f"Errore durante il download del file Mega: {e}")
-        return None
-
-def download_mega_folder(mega_url, save_dir, custom_prefix=None, preserve_structure=True):
-    """
-    Scarica una cartella completa da Mega.
-    """
-    try:
-        # Per le cartelle usiamo solo megatools
-        result = download_with_megatools(mega_url, save_dir, custom_prefix)
-        return result
-        
-    except Exception as e:
-        print(f"Errore durante il download della cartella Mega: {e}")
-        return []
-
 def download_mega_auto(mega_url, save_dir, custom_prefix=None, preserve_structure=True):
     """
-    Determina automaticamente se il link Mega è per un file o una cartella
-    e utilizza il metodo di download appropriato.
+    Scarica da Mega usando solo megatools (funziona sia per file che cartelle).
     """
     try:
-        link_type, _, _ = extract_mega_info(mega_url)
-        
-        if link_type == "file":
-            result = download_mega_file(mega_url, save_dir, custom_prefix)
-            return [result] if result else []
-        elif link_type == "folder":
-            return download_mega_folder(mega_url, save_dir, custom_prefix, preserve_structure)
-        else:
-            print("Link Mega non riconosciuto")
-            return []
-            
+        return download_with_megatools(mega_url, save_dir, custom_prefix)
     except Exception as e:
         print(f"Errore nell'auto-download Mega: {e}")
         return []
@@ -219,9 +136,6 @@ def is_mega_link(url):
     """
     mega_pattern = r"https?://mega\.nz/(file|folder)/[^#]+#.+"
     return bool(re.match(mega_pattern, url))
-
-# Alias per compatibilità
-check_megadown_installed = check_megatools_installed
 
 def download_mega_auto(mega_url, save_dir, custom_prefix=None, preserve_structure=True):
     """
