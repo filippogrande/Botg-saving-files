@@ -37,12 +37,6 @@ def sanitize_filename(filename):
         filename = filename.replace(char, '_')
     return filename
 
-def check_megatools_installed():
-    """
-    Verifica se megatools è installato nel sistema.
-    """
-    return get_megadl_command() is not None
-
 def get_megadl_command():
     """
     Trova il path corretto per megadl.
@@ -59,6 +53,12 @@ def get_megadl_command():
             continue
     
     return None
+
+def check_megatools_installed():
+    """
+    Verifica se megatools è installato nel sistema.
+    """
+    return get_megadl_command() is not None
 
 def download_with_megatools(mega_url, save_dir, custom_prefix=None):
     """
