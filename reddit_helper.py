@@ -15,6 +15,7 @@ areddit = asyncpraw.Reddit(
 )
 
 WATCH_FILE = "reddit_watch.json"
+USER_FILE = "reddit_notify_user.txt"
 
 def download_gallery(submission, author, timestamp, save_dir):
     files = []
@@ -91,8 +92,23 @@ async def download_reddit_profile_media(username, save_dir, max_posts=None):
     except Exception as e:
         return f"Errore: {str(e)}"
 
+# Funzione per salvare l'user_id Telegram del primo che usa monitora
+async def save_notify_user(user_id, save_dir):
+    user_path = os.path.join(save_dir, USER_FILE)
+    if not os.path.exists(user_path):
+        with open(user_path, "w") as f:
+            f.write(str(user_id))
+
+# Funzione per leggere l'user_id Telegram
+def get_notify_user(save_dir):
+    user_path = os.path.join(save_dir, USER_FILE)
+    if os.path.exists(user_path):
+        with open(user_path, "r") as f:
+            return int(f.read().strip())
+    return None
+
 # Funzione per aggiungere un profilo da monitorare
-async def add_reddit_profile_to_watch(username, save_dir):
+async def add_reddit_profile_to_watch(username, save_dir, user_id=None):
     watch_path = os.path.join(save_dir, WATCH_FILE)
     if os.path.exists(watch_path):
         with open(watch_path, "r") as f:
@@ -109,10 +125,13 @@ async def add_reddit_profile_to_watch(username, save_dir):
     watch[username] = {"last_id": last_id}
     with open(watch_path, "w") as f:
         json.dump(watch, f)
+    # Salva user_id se fornito
+    if user_id:
+        await save_notify_user(user_id, save_dir)
     return f"Profilo {username} aggiunto al monitoraggio. Ultimo post visto: {last_id}"
 
-# Funzione watcher giornaliera
-async def reddit_profile_watcher_loop(save_dir, duplicate_handler):
+# Modifica watcher per inviare log giornaliero
+async def reddit_profile_watcher_loop(save_dir, duplicate_handler, bot=None):
     while True:
         now = datetime.now()
         # Calcola i secondi fino a mezzanotte
@@ -127,6 +146,9 @@ async def reddit_profile_watcher_loop(save_dir, duplicate_handler):
             continue
         with open(watch_path, "r") as f:
             watch = json.load(f)
+        notify_user = get_notify_user(save_dir)
+        total_new = 0
+        total_removed = 0
         for username, info in watch.items():
             last_id = info.get("last_id")
             try:
@@ -147,15 +169,24 @@ async def reddit_profile_watcher_loop(save_dir, duplicate_handler):
                 # Aggiorna solo se ci sono nuovi post
                 if new_files and new_last_id:
                     watch[username]["last_id"] = new_last_id
-                    # Chiama il duplicate handler dopo i download
-                    await duplicate_handler()
+                total_new += len(new_files)
             except Exception as e:
                 print(f"Errore watcher Reddit per {username}: {e}")
+        # Deduplica e conta duplicati rimossi
+        removed = await duplicate_handler()
+        total_removed += removed if removed else 0
         with open(watch_path, "w") as f:
             json.dump(watch, f)
+        # Invia log se bot e user_id sono disponibili
+        if bot and notify_user:
+            msg = f"[Watcher Reddit]\nNuovi file scaricati: {total_new}\nDuplicati eliminati: {total_removed}"
+            try:
+                await bot.send_message(chat_id=notify_user, text=msg)
+            except Exception as e:
+                print(f"Errore invio log Telegram: {e}")
 
-# Modifica download_reddit_auto per riconoscere comando monitora
-async def download_reddit_auto(url, save_dir, max_posts=None):
+# Modifica download_reddit_auto per passare user_id
+async def download_reddit_auto(url, save_dir, max_posts=None, user_id=None):
     """
     Scarica automaticamente i media dal link Reddit fornito (profilo, post, immagine, video, ecc).
     Se il messaggio inizia con 'monitora ', aggiunge il profilo al watcher.
@@ -165,7 +196,7 @@ async def download_reddit_auto(url, save_dir, max_posts=None):
         m = re.search(r"reddit.com/(user|u)/([\w\d_-]+)", url)
         if m:
             username = m.group(2)
-            return await add_reddit_profile_to_watch(username, save_dir)
+            return await add_reddit_profile_to_watch(username, save_dir, user_id=user_id)
         else:
             return "Link profilo Reddit non valido."
     # Riconoscimento profilo
