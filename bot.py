@@ -1,5 +1,5 @@
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters, CallbackQueryHandler
 import os
 from datetime import datetime
 import re
@@ -7,6 +7,7 @@ import requests
 import asyncpraw
 from redgifs_helper import download_redgifs_profile, download_redgifs_auto
 import reddit_helper  # <--- aggiunto per gestire i profili Reddit
+from find_duplicate_helper import find_duplicates
 
 # Importazione condizionale per Mega (per evitare errori se la libreria non è disponibile)
 try:
@@ -46,6 +47,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     filename = f"{SAVE_DIR}/{user.id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
     await file.download_to_drive(filename)
     await update.message.reply_text("Foto ricevuta!")
+    await duplicate_check_and_interaction(update, context)
 
 async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -54,6 +56,7 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     filename = f"{SAVE_DIR}/{user.id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
     await file.download_to_drive(filename)
     await update.message.reply_text("Video ricevuto!")
+    await duplicate_check_and_interaction(update, context)
 
 async def handle_animation(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -62,10 +65,10 @@ async def handle_animation(update: Update, context: ContextTypes.DEFAULT_TYPE):
     filename = f"{SAVE_DIR}/{user.id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
     await file.download_to_drive(filename)
     await update.message.reply_text("GIF animata salvata come mp4!")
+    await duplicate_check_and_interaction(update, context)
 
 async def handle_reddit_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
-    # Regex molto permissiva: basta che ci sia reddit.com o i.redd.it ovunque nel testo
     reddit_pattern = r"(reddit\.com|i\.redd\.it)"
     if not re.search(reddit_pattern, text, re.IGNORECASE):
         await update.message.reply_text("Non ho riconosciuto un link Reddit valido.")
@@ -80,6 +83,7 @@ async def handle_reddit_link(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 await update.message.reply_text("Nessun media scaricabile trovato nel link Reddit.")
         else:
             await update.message.reply_text(f"Errore durante il download dal link Reddit: {result}")
+        await duplicate_check_and_interaction(update, context)
     except Exception as e:
         await update.message.reply_text(f"Errore durante il download dal link Reddit: {str(e)}")
 
@@ -90,18 +94,15 @@ async def handle_unknown(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_redgifs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     import re as _re
     text = update.message.text.strip()
-    user_pattern = r"https?://(www\.)?redgifs\.com/users/([\w\d_-]+)"
-    post_pattern = r"https?://(www\.)?redgifs\.com/watch/[\w\d_-]+"
-    # Opzioni personalizzate
+    user_pattern = r"https?://(www\\.)?redgifs\\.com/users/([\\w\\d_-]+)"
+    post_pattern = r"https?://(www\\.)?redgifs\\.com/watch/[\\w\\d_-]+"
     only_video = text.lower().startswith("solo video")
     only_photo = text.lower().startswith("solo foto")
-    ultimi_match = _re.match(r"ultimi (\d+) post", text.lower())
+    ultimi_match = _re.match(r"ultimi (\\d+) post", text.lower())
     ultimi_n = int(ultimi_match.group(1)) if ultimi_match else None
-    # Controllo comando valido
     if (text.lower().startswith("solo ") and not (only_video or only_photo)) or (text.lower().startswith("ultimi") and not ultimi_match):
         await update.message.reply_text("Comando non riconosciuto. Usa solo video, solo foto, ultimi N post o solo il link utente Redgifs.")
         return
-    # Gestione profilo utente
     user_match = _re.search(user_pattern, text)
     if user_match:
         username = user_match.group(2)
@@ -111,8 +112,8 @@ async def handle_redgifs(update: Update, context: ContextTypes.DEFAULT_TYPE):
         max_posts = ultimi_n if ultimi_n else None
         results = download_redgifs_profile(username, SAVE_DIR, max_posts=max_posts, allow_video=allow_video, allow_photo=allow_photo)
         await update.message.reply_text(f"Download completato. File salvati: {len(results)}")
+        await duplicate_check_and_interaction(update, context)
         return
-    # Gestione singolo post
     post_match = _re.search(post_pattern, text)
     if post_match:
         await update.message.reply_text("Inizio a scaricare il post Redgifs...")
@@ -123,6 +124,7 @@ async def handle_redgifs(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"File Redgifs scaricato e salvato come {os.path.basename(file_path)}!")
         else:
             await update.message.reply_text("Nessun file scaricabile trovato nel post Redgifs.")
+        await duplicate_check_and_interaction(update, context)
         return
     await update.message.reply_text("Non ho riconosciuto un link Redgifs valido.")
 
@@ -142,7 +144,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 async def handle_mega_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
-    mega_pattern = r"https?://mega\.nz/(file|folder)/[^#]+#.+"
+    mega_pattern = r"https?://mega\\.nz/(file|folder)/[^#]+#.+"
     match = re.search(mega_pattern, text)
     if not match:
         await update.message.reply_text("Non ho riconosciuto un link Mega valido.")
@@ -155,8 +157,62 @@ async def handle_mega_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"Download Mega completato! File salvati: {len(downloaded_files)}")
         else:
             await update.message.reply_text("Nessun file scaricabile trovato o errore durante il download Mega.")
+        await duplicate_check_and_interaction(update, context)
     except Exception as e:
         await update.message.reply_text(f"Errore durante il download Mega: {str(e)}")
+
+# Handler per eliminazione duplicato su comando utente
+async def elimina_duplicato(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.args:
+        filename = context.args[0]
+        file_path = os.path.join(SAVE_DIR, filename)
+        if os.path.exists(file_path):
+            os.remove(file_path)
+            await update.message.reply_text(f"File duplicato {filename} eliminato!")
+        else:
+            await update.message.reply_text(f"File {filename} non trovato.")
+    else:
+        await update.message.reply_text("Devi specificare il nome del file da eliminare. Esempio: /elimina nomefile.jpg")
+
+# Handler per mantenere entrambi (placeholder, opzionale)
+async def tieni_duplicato(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Entrambi i file sono stati mantenuti.")
+
+async def duplicate_check_and_interaction(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    duplicates = find_duplicates(SAVE_DIR)
+    if duplicates:
+        for original, duplicate in duplicates:
+            with open(original, 'rb') as f1, open(duplicate, 'rb') as f2:
+                await update.message.reply_document(f1, filename=os.path.basename(original), caption="File già presente (originale)")
+                await update.message.reply_document(f2, filename=os.path.basename(duplicate), caption="File duplicato appena scaricato")
+            keyboard = [
+                [
+                    InlineKeyboardButton("Elimina duplicato", callback_data=f"elimina|{os.path.basename(duplicate)}"),
+                    InlineKeyboardButton("Tieni entrambi", callback_data=f"tieni|{os.path.basename(duplicate)}")
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.message.reply_text(
+                f"Sono stati trovati due file identici:\n- {os.path.basename(original)}\n- {os.path.basename(duplicate)}\nScegli cosa fare:",
+                reply_markup=reply_markup
+            )
+    else:
+        await update.message.reply_text("Nessun duplicato trovato nella cartella.")
+
+# Handler per i bottoni inline
+async def handle_duplicate_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    action, filename = query.data.split("|", 1)
+    file_path = os.path.join(SAVE_DIR, filename)
+    if action == "elimina":
+        if os.path.exists(file_path):
+            os.remove(file_path)
+            await query.edit_message_text(f"File duplicato {filename} eliminato!")
+        else:
+            await query.edit_message_text(f"File {filename} non trovato.")
+    elif action == "tieni":
+        await query.edit_message_text("Entrambi i file sono stati mantenuti.")
 
 app = ApplicationBuilder().token("7564134479:AAHKqBkapm75YYJoYRBzS1NLFQskmbC-LcY").build()
 
@@ -170,6 +226,10 @@ app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://mega\.nz/
 app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://(www\.)?redgifs\.com/(users|watch)/"), handle_redgifs))
 app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://[^\s]*reddit[^\s]*"), handle_reddit_link))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_unknown))
+app.add_handler(CommandHandler("elimina", elimina_duplicato))
+app.add_handler(CommandHandler("tieni", tieni_duplicato))
+app.add_handler(CommandHandler("trovamiduplicati", duplicate_check_and_interaction))
+app.add_handler(CallbackQueryHandler(handle_duplicate_callback, pattern=r"^(elimina|tieni)\|"))
 
 # Sposta questo handler SOPRA quello dei post reddit (handle_reddit_link) per priorità
 

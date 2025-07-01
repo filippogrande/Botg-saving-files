@@ -135,3 +135,4 @@ async def download_reddit_auto(url, save_dir, max_posts=None):
             return "Link Reddit non riconosciuto o non supportato."
     except Exception as e:
         return f"Errore: {str(e)}"
+
