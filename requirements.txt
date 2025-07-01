@@ -2,3 +2,5 @@ python-telegram-bot
 asyncpraw
 requests
 yt-dlp
+megatools-wrapper
+tqdm
