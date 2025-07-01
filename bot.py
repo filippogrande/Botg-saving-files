@@ -184,8 +184,6 @@ app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://mega\\.nz
 app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://(www\\.)?redgifs\\.com/(users|watch)/"), handle_redgifs))
 app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://[^\\s]*reddit[^\\s]*"), handle_reddit_link))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_unknown))
-app.add_handler(CommandHandler("elimina", elimina_duplicato))
-app.add_handler(CommandHandler("tieni", tieni_duplicato))
 app.add_handler(CommandHandler("trovamiduplicati", duplicate_check_and_interaction))
 
 app.run_polling()
