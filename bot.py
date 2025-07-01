@@ -88,6 +88,10 @@ async def handle_reddit_link(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text(f"Errore durante il download dal link Reddit: {str(e)}")
 
 async def handle_unknown(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Ignora i comandi noti per evitare doppia risposta
+    known_commands = ["/hello", "/start", "/help", "/elimina", "/tieni", "/trovamiduplicati"]
+    if update.message.text and any(update.message.text.startswith(cmd) for cmd in known_commands):
+        return
     msg_type = update.message.effective_attachment or update.message.text or 'messaggio non identificato'
     await update.message.reply_text(f"Il tipo di file o messaggio che hai inviato non è supportato dal bot.\nTipo ricevuto: {type(msg_type).__name__}")
 
@@ -161,58 +165,12 @@ async def handle_mega_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"Errore durante il download Mega: {str(e)}")
 
-# Handler per eliminazione duplicato su comando utente
-async def elimina_duplicato(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if context.args:
-        filename = context.args[0]
-        file_path = os.path.join(SAVE_DIR, filename)
-        if os.path.exists(file_path):
-            os.remove(file_path)
-            await update.message.reply_text(f"File duplicato {filename} eliminato!")
-        else:
-            await update.message.reply_text(f"File {filename} non trovato.")
-    else:
-        await update.message.reply_text("Devi specificare il nome del file da eliminare. Esempio: /elimina nomefile.jpg")
-
-# Handler per mantenere entrambi (placeholder, opzionale)
-async def tieni_duplicato(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Entrambi i file sono stati mantenuti.")
-
+# Sostituisci la funzione duplicate_check_and_interaction con la nuova logica automatica
 async def duplicate_check_and_interaction(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    duplicates = find_duplicates(SAVE_DIR)
-    if duplicates:
-        for original, duplicate in duplicates:
-            with open(original, 'rb') as f1, open(duplicate, 'rb') as f2:
-                await update.message.reply_document(f1, filename=os.path.basename(original), caption="File già presente (originale)")
-                await update.message.reply_document(f2, filename=os.path.basename(duplicate), caption="File duplicato appena scaricato")
-            keyboard = [
-                [
-                    InlineKeyboardButton("Elimina duplicato", callback_data=f"elimina|{os.path.basename(duplicate)}"),
-                    InlineKeyboardButton("Tieni entrambi", callback_data=f"tieni|{os.path.basename(duplicate)}")
-                ]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await update.message.reply_text(
-                f"Sono stati trovati due file identici:\n- {os.path.basename(original)}\n- {os.path.basename(duplicate)}\nScegli cosa fare:",
-                reply_markup=reply_markup
-            )
-    else:
-        await update.message.reply_text("Nessun duplicato trovato nella cartella.")
-
-# Handler per i bottoni inline
-async def handle_duplicate_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    action, filename = query.data.split("|", 1)
-    file_path = os.path.join(SAVE_DIR, filename)
-    if action == "elimina":
-        if os.path.exists(file_path):
-            os.remove(file_path)
-            await query.edit_message_text(f"File duplicato {filename} eliminato!")
-        else:
-            await query.edit_message_text(f"File {filename} non trovato.")
-    elif action == "tieni":
-        await query.edit_message_text("Entrambi i file sono stati mantenuti.")
+    num_removed = find_duplicates(SAVE_DIR)
+    if num_removed > 0:
+        await update.message.reply_text(f"Rimossi automaticamente {num_removed} file duplicati.")
+    # Nessuna notifica se non ci sono duplicati
 
 app = ApplicationBuilder().token("7564134479:AAHKqBkapm75YYJoYRBzS1NLFQskmbC-LcY").build()
 
@@ -222,16 +180,13 @@ app.add_handler(CommandHandler("help", help_command))
 app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 app.add_handler(MessageHandler(filters.VIDEO, handle_video))
 app.add_handler(MessageHandler(filters.ANIMATION, handle_animation))
-app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://mega\.nz/(file|folder)/"), handle_mega_link))
-app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://(www\.)?redgifs\.com/(users|watch)/"), handle_redgifs))
-app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://[^\s]*reddit[^\s]*"), handle_reddit_link))
+app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://mega\\.nz/(file|folder)/"), handle_mega_link))
+app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://(www\\.)?redgifs\\.com/(users|watch)/"), handle_redgifs))
+app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://[^\\s]*reddit[^\\s]*"), handle_reddit_link))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_unknown))
 app.add_handler(CommandHandler("elimina", elimina_duplicato))
 app.add_handler(CommandHandler("tieni", tieni_duplicato))
 app.add_handler(CommandHandler("trovamiduplicati", duplicate_check_and_interaction))
-app.add_handler(CallbackQueryHandler(handle_duplicate_callback, pattern=r"^(elimina|tieni)\|"))
-
-# Sposta questo handler SOPRA quello dei post reddit (handle_reddit_link) per priorità
 
 app.run_polling()
 
