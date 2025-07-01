@@ -65,8 +65,9 @@ async def handle_animation(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_reddit_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
-    reddit_pattern = r"https?://(www\.)?reddit\.com/|https?://reddit\.com/|https?://i\.redd\.it/"
-    if not re.search(reddit_pattern, text):
+    # Regex molto permissiva: basta che ci sia reddit.com o i.redd.it ovunque nel testo
+    reddit_pattern = r"(reddit\.com|i\.redd\.it)"
+    if not re.search(reddit_pattern, text, re.IGNORECASE):
         await update.message.reply_text("Non ho riconosciuto un link Reddit valido.")
         return
     await update.message.reply_text("Inizio il download dal link Reddit... (potrebbe volerci un po')")
@@ -167,7 +168,7 @@ app.add_handler(MessageHandler(filters.VIDEO, handle_video))
 app.add_handler(MessageHandler(filters.ANIMATION, handle_animation))
 app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://mega\.nz/(file|folder)/"), handle_mega_link))
 app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://(www\.)?redgifs\.com/(users|watch)/"), handle_redgifs))
-app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://(www\.)?reddit\.com/|https?://reddit\.com/|https?://i\.redd\.it/"), handle_reddit_link))
+app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://[^\s]*reddit[^\s]*"), handle_reddit_link))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_unknown))
 
 # Sposta questo handler SOPRA quello dei post reddit (handle_reddit_link) per priorità
