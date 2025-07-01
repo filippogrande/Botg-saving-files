@@ -76,14 +76,19 @@ async def handle_reddit_link(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
     await update.message.reply_text("Inizio il download dal link Reddit... (potrebbe volerci un po')")
     try:
-        result = await reddit_helper.download_reddit_auto(text, SAVE_DIR)
+        result = await reddit_helper.download_reddit_auto(text, SAVE_DIR, user_id=update.effective_user.id)
         if isinstance(result, list):
             if result:
                 await update.message.reply_text(f"Download completato! File salvati: {len(result)}")
             else:
                 await update.message.reply_text("Nessun media scaricabile trovato nel link Reddit.")
-        else:
-            await update.message.reply_text(f"Errore durante il download dal link Reddit: {result}")
+        elif isinstance(result, str):
+            if result.lower().startswith("profilo"):
+                await update.message.reply_text(result)
+            elif result.lower().startswith("errore"):
+                await update.message.reply_text(result)
+            else:
+                await update.message.reply_text(f"Info: {result}")
         await duplicate_check_and_interaction(update, context)
     except Exception as e:
         await update.message.reply_text(f"Errore durante il download dal link Reddit: {str(e)}")
