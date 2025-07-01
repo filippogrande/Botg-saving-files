@@ -17,12 +17,19 @@ def load_hashes(directory):
 
 def save_hashes(directory, hashes):
     path = os.path.join(directory, HASH_FILE)
-    with open(path, "w") as f:
-        json.dump(hashes, f)
+    try:
+        with open(path, "w") as f:
+            json.dump(hashes, f)
+    except Exception as e:
+        print(f"Errore salvataggio hashes: {e}")
 
 def file_hash(path):
-    with open(path, 'rb') as f:
-        return hashlib.md5(f.read()).hexdigest()
+    try:
+        with open(path, 'rb') as f:
+            return hashlib.md5(f.read()).hexdigest()
+    except Exception as e:
+        print(f"Errore calcolo hash per {path}: {e}")
+        return None
 
 def find_duplicates(directory):
     """
@@ -37,6 +44,8 @@ def find_duplicates(directory):
         path = os.path.join(directory, fname)
         try:
             h = file_hash(path)
+            if not h:
+                continue
             # Se già presente un file con stesso hash (ma nome diverso), elimina il duplicato
             if h in hash_to_file:
                 os.remove(path)
@@ -52,5 +61,8 @@ def find_duplicates(directory):
     for fname in list(hashes.keys()):
         if fname not in files:
             del hashes[fname]
-    save_hashes(directory, hashes)
+    try:
+        save_hashes(directory, hashes)
+    except Exception as e:
+        print(f"Errore salvataggio hashes finale: {e}")
     return removed

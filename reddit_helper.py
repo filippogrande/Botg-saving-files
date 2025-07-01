@@ -21,49 +21,67 @@ def download_gallery(submission, author, timestamp, save_dir):
     files = []
     if hasattr(submission, 'gallery_data') and hasattr(submission, 'media_metadata'):
         for idx, item in enumerate(submission.gallery_data['items']):
-            media_id = item['media_id']
-            media_url = submission.media_metadata[media_id]['s']['u']
-            ext = os.path.splitext(media_url)[1].split('?')[0]
-            filename = f"{save_dir}/{author}_{submission.id}_{timestamp}_{idx}{ext}"
-            r = requests.get(media_url, timeout=20)
-            with open(filename, 'wb') as f:
-                f.write(r.content)
-            files.append(filename)
+            try:
+                media_id = item['media_id']
+                media_url = submission.media_metadata[media_id]['s']['u']
+                ext = os.path.splitext(media_url)[1].split('?')[0]
+                filename = f"{save_dir}/{author}_{submission.id}_{timestamp}_{idx}{ext}"
+                r = requests.get(media_url, timeout=20)
+                with open(filename, 'wb') as f:
+                    f.write(r.content)
+                files.append(filename)
+            except Exception as e:
+                print(f"Errore download gallery item {idx}: {e}")
     return files
 
 def download_image(submission, author, timestamp, save_dir):
-    media_url = submission.url
-    ext = os.path.splitext(media_url)[1]
-    filename = f"{save_dir}/{author}_{submission.id}_{timestamp}{ext}"
-    r = requests.get(media_url, timeout=20)
-    with open(filename, 'wb') as f:
-        f.write(r.content)
-    return [filename]
+    try:
+        media_url = submission.url
+        ext = os.path.splitext(media_url)[1]
+        filename = f"{save_dir}/{author}_{submission.id}_{timestamp}{ext}"
+        r = requests.get(media_url, timeout=20)
+        with open(filename, 'wb') as f:
+            f.write(r.content)
+        return [filename]
+    except Exception as e:
+        print(f"Errore download immagine: {e}")
+        return []
 
 def download_video(submission, author, timestamp, save_dir):
-    media_url = submission.media['reddit_video']['fallback_url']
-    ext = ".mp4"
-    filename = f"{save_dir}/{author}_{submission.id}_{timestamp}{ext}"
-    r = requests.get(media_url, timeout=20)
-    with open(filename, 'wb') as f:
-        f.write(r.content)
-    return [filename]
+    try:
+        media_url = submission.media['reddit_video']['fallback_url']
+        ext = ".mp4"
+        filename = f"{save_dir}/{author}_{submission.id}_{timestamp}{ext}"
+        r = requests.get(media_url, timeout=20)
+        with open(filename, 'wb') as f:
+            f.write(r.content)
+        return [filename]
+    except Exception as e:
+        print(f"Errore download video: {e}")
+        return []
 
 def download_direct_gif_video(submission, author, timestamp, save_dir):
-    media_url = submission.url
-    ext = ".mp4"
-    filename = f"{save_dir}/{author}_{submission.id}_{timestamp}{ext}"
-    r = requests.get(media_url, timeout=20)
-    with open(filename, 'wb') as f:
-        f.write(r.content)
-    return [filename]
+    try:
+        media_url = submission.url
+        ext = ".mp4"
+        filename = f"{save_dir}/{author}_{submission.id}_{timestamp}{ext}"
+        r = requests.get(media_url, timeout=20)
+        with open(filename, 'wb') as f:
+            f.write(r.content)
+        return [filename]
+    except Exception as e:
+        print(f"Errore download gif/video diretto: {e}")
+        return []
 
 def download_redgifs(submission, save_dir):
-    # Usa l'helper già esistente, ritorna lista o stringa
-    file_path = download_redgifs_auto(submission.url, save_dir)
-    if file_path:
-        return [file_path]
-    return []
+    try:
+        file_path = download_redgifs_auto(submission.url, save_dir)
+        if file_path:
+            return [file_path]
+        return []
+    except Exception as e:
+        print(f"Errore download Redgifs: {e}")
+        return []
 
 async def download_reddit_profile_media(username, save_dir, max_posts=None):
     """

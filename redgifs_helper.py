@@ -26,6 +26,7 @@ def download_redgifs_video(video_url, save_dir, prefix=None):
             ydl.download([video_url])
         return filename
     except Exception as e:
+        print(f"Errore download video Redgifs: {e}")
         return None
 
 def download_redgifs_image_from_post(post_url, save_dir, prefix=None):
@@ -48,7 +49,8 @@ def download_redgifs_image_from_post(post_url, save_dir, prefix=None):
             return filename
         else:
             return None
-    except Exception:
+    except Exception as e:
+        print(f"Errore download immagine Redgifs: {e}")
         return None
 
 def redgifs_post_type(post_url):
@@ -67,7 +69,8 @@ def redgifs_post_type(post_url):
         if img_match:
             return 'foto'
         return 'altro'
-    except Exception:
+    except Exception as e:
+        print(f"Errore determinazione tipo post Redgifs: {e}")
         return 'altro'
 
 def download_redgifs_auto(post_url, save_dir, prefix=None, allow_video=True, allow_photo=True):
@@ -76,12 +79,16 @@ def download_redgifs_auto(post_url, save_dir, prefix=None, allow_video=True, all
     Puoi bloccare il download di video o foto con allow_video/allow_photo.
     Restituisce il percorso del file scaricato o None.
     """
-    tipo = redgifs_post_type(post_url)
-    if tipo == 'video' and allow_video:
-        return download_redgifs_video(post_url, save_dir, prefix)
-    elif tipo == 'foto' and allow_photo:
-        return download_redgifs_image_from_post(post_url, save_dir, prefix)
-    else:
+    try:
+        tipo = redgifs_post_type(post_url)
+        if tipo == 'video' and allow_video:
+            return download_redgifs_video(post_url, save_dir, prefix)
+        elif tipo == 'foto' and allow_photo:
+            return download_redgifs_image_from_post(post_url, save_dir, prefix)
+        else:
+            return None
+    except Exception as e:
+        print(f"Errore download auto Redgifs: {e}")
         return None
 
 def download_redgifs_profile(username, save_dir, max_posts=None, allow_video=True, allow_photo=True):
@@ -100,10 +107,14 @@ def download_redgifs_profile(username, save_dir, max_posts=None, allow_video=Tru
             post_links = post_links[:max_posts]
         results = []
         for post_url in post_links:
-            file_path = download_redgifs_auto(post_url, save_dir, allow_video=allow_video, allow_photo=allow_photo)
-            if file_path:
-                results.append(file_path)
-            time.sleep(2)  # Delay tra i download per evitare anti-DDoS
+            try:
+                file_path = download_redgifs_auto(post_url, save_dir, allow_video=allow_video, allow_photo=allow_photo)
+                if file_path:
+                    results.append(file_path)
+                time.sleep(2)  # Delay tra i download per evitare anti-DDoS
+            except Exception as e:
+                print(f"Errore download post Redgifs {post_url}: {e}")
         return results
     except Exception as e:
+        print(f"Errore download profilo Redgifs: {e}")
         return []
