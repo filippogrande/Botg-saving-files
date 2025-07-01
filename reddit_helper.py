@@ -4,6 +4,8 @@ import asyncpraw
 import re
 from datetime import datetime
 from redgifs_helper import download_redgifs_auto
+import json
+import asyncio
 
 # Configurazione Reddit asincrona (le credenziali devono essere le stesse di bot.py)
 areddit = asyncpraw.Reddit(
@@ -11,6 +13,8 @@ areddit = asyncpraw.Reddit(
     client_secret="1x-jhTKVAyGAJ79ztZwaYab-c7JJLQ",
     user_agent="telegram-bot-reddit"
 )
+
+WATCH_FILE = "reddit_watch.json"
 
 def download_gallery(submission, author, timestamp, save_dir):
     files = []
@@ -87,16 +91,83 @@ async def download_reddit_profile_media(username, save_dir, max_posts=None):
     except Exception as e:
         return f"Errore: {str(e)}"
 
+# Funzione per aggiungere un profilo da monitorare
+async def add_reddit_profile_to_watch(username, save_dir):
+    watch_path = os.path.join(save_dir, WATCH_FILE)
+    if os.path.exists(watch_path):
+        with open(watch_path, "r") as f:
+            watch = json.load(f)
+    else:
+        watch = {}
+    # Recupera l'ultimo post attuale
+    redditor = await areddit.redditor(username)
+    submissions = redditor.submissions.new(limit=1)
+    last_id = None
+    async for submission in submissions:
+        last_id = submission.id
+        break
+    watch[username] = {"last_id": last_id}
+    with open(watch_path, "w") as f:
+        json.dump(watch, f)
+    return f"Profilo {username} aggiunto al monitoraggio. Ultimo post visto: {last_id}"
+
+# Funzione watcher giornaliera
+async def reddit_profile_watcher_loop(save_dir, duplicate_handler):
+    while True:
+        now = datetime.now()
+        # Calcola i secondi fino a mezzanotte
+        next_run = datetime(now.year, now.month, now.day)  # oggi a mezzanotte
+        if now > next_run:
+            next_run = next_run.replace(day=now.day+1)
+        seconds = (next_run - now).total_seconds()
+        await asyncio.sleep(seconds)
+        # Carica i profili da monitorare
+        watch_path = os.path.join(save_dir, WATCH_FILE)
+        if not os.path.exists(watch_path):
+            continue
+        with open(watch_path, "r") as f:
+            watch = json.load(f)
+        for username, info in watch.items():
+            last_id = info.get("last_id")
+            try:
+                redditor = await areddit.redditor(username)
+                submissions = redditor.submissions.new(limit=10)
+                new_last_id = last_id
+                new_files = []
+                async for submission in submissions:
+                    if submission.id == last_id:
+                        break
+                    post_url = f"https://www.reddit.com{submission.permalink}" if hasattr(submission, 'permalink') else None
+                    if post_url:
+                        result = await download_reddit_auto(post_url, save_dir)
+                        if isinstance(result, list):
+                            new_files.extend(result)
+                    if not new_last_id:
+                        new_last_id = submission.id
+                # Aggiorna solo se ci sono nuovi post
+                if new_files and new_last_id:
+                    watch[username]["last_id"] = new_last_id
+                    # Chiama il duplicate handler dopo i download
+                    await duplicate_handler()
+            except Exception as e:
+                print(f"Errore watcher Reddit per {username}: {e}")
+        with open(watch_path, "w") as f:
+            json.dump(watch, f)
+
+# Modifica download_reddit_auto per riconoscere comando monitora
 async def download_reddit_auto(url, save_dir, max_posts=None):
     """
     Scarica automaticamente i media dal link Reddit fornito (profilo, post, immagine, video, ecc).
-    Args:
-        url (str): link Reddit (profilo, post, immagine, ecc)
-        save_dir (str): directory di salvataggio
-        max_posts (int, opzionale): solo per profili, massimo numero di post
-    Returns:
-        List[str] o str: lista file scaricati o messaggio di errore
+    Se il messaggio inizia con 'monitora ', aggiunge il profilo al watcher.
     """
+    if url.lower().startswith("monitora "):
+        # Estrai username dal link
+        m = re.search(r"reddit.com/(user|u)/([\w\d_-]+)", url)
+        if m:
+            username = m.group(2)
+            return await add_reddit_profile_to_watch(username, save_dir)
+        else:
+            return "Link profilo Reddit non valido."
     # Riconoscimento profilo
     profile_pattern = r"https?://(www\.)?reddit\.com/(user|u)/([\w\d_-]+)"
     img_pattern = r"https?://i\.redd\.it/[\w\d]+\.[a-zA-Z0-9]+"

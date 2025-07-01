@@ -8,6 +8,7 @@ import asyncpraw
 from redgifs_helper import download_redgifs_profile, download_redgifs_auto
 import reddit_helper  # <--- aggiunto per gestire i profili Reddit
 from find_duplicate_helper import find_duplicates
+import asyncio
 
 # Importazione condizionale per Mega (per evitare errori se la libreria non è disponibile)
 try:
@@ -172,6 +173,12 @@ async def duplicate_check_and_interaction(update: Update, context: ContextTypes.
         await update.message.reply_text(f"Rimossi automaticamente {num_removed} file duplicati.")
     # Nessuna notifica se non ci sono duplicati
 
+# Wrapper per deduplicazione senza update/context (per watcher)
+async def deduplication_noctx():
+    num_removed = find_duplicates(SAVE_DIR)
+    if num_removed > 0:
+        print(f"[Watcher] Rimossi automaticamente {num_removed} file duplicati.")
+
 app = ApplicationBuilder().token("7564134479:AAHKqBkapm75YYJoYRBzS1NLFQskmbC-LcY").build()
 
 app.add_handler(CommandHandler("hello", hello))
@@ -187,5 +194,10 @@ app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://[^\\s]*re
 
 
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_unknown))
-app.run_polling()
+
+if __name__ == "__main__":
+    # Avvia watcher Reddit in background
+    loop = asyncio.get_event_loop()
+    loop.create_task(reddit_helper.reddit_profile_watcher_loop(SAVE_DIR, deduplication_noctx))
+    app.run_polling()
 
