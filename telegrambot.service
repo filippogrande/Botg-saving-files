@@ -4,8 +4,8 @@ After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=/Users/filippomoscatelli/Desktop/Botg-saving-files
-ExecStart=/usr/bin/python3 /Users/filippomoscatelli/Desktop/Botg-saving-files/bot.py
+WorkingDirectory=/root/projects/Botg-saving-files
+ExecStart=/usr/bin/python3 /root/projects/Botg-saving-files/bot.py
 Restart=always
 User=root
 
