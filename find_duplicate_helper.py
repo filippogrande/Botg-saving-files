@@ -4,28 +4,6 @@ import shutil
 
 def find_duplicates(directory):
     """
-    Cerca file duplicati (stesso hash) nella directory e restituisce una lista di tuple (originale, duplicato).
-    Non sposta né elimina nulla: la logica di gestione viene demandata al chiamante (es. bot Telegram).
-    """
-    hashes = {}
-    duplicates = []
-    for fname in os.listdir(directory):
-        if fname.lower().endswith((".jpg", ".jpeg", ".png", ".gif", ".webp", ".mp4", ".mov")):
-            path = os.path.join(directory, fname)
-            try:
-                with open(path, 'rb') as f:
-                    filehash = hashlib.md5(f.read()).hexdigest()
-                if filehash in hashes:
-                    # Trovato duplicato: salva la coppia (originale, duplicato)
-                    duplicates.append((hashes[filehash], path))
-                else:
-                    hashes[filehash] = path
-            except Exception as e:
-                print(f"Errore su {fname}: {e}")
-    return duplicates
-
-def find_duplicates_and_remove(directory):
-    """
     Cerca file duplicati (stesso hash) nella directory, elimina i duplicati e restituisce il numero di duplicati rimossi.
     """
     hashes = {}
