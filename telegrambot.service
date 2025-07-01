@@ -1,0 +1,13 @@
+[Unit]
+Description=Telegram Bot Python
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/Users/filippomoscatelli/Desktop/Botg-saving-files
+ExecStart=/usr/bin/python3 /Users/filippomoscatelli/Desktop/Botg-saving-files/bot.py
+Restart=always
+User=root
+
+[Install]
+WantedBy=multi-user.target
