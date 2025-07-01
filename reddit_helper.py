@@ -71,9 +71,10 @@ async def download_reddit_profile_media(username, save_dir, max_posts=None):
         List[str]: lista dei file scaricati
     """
     os.makedirs(save_dir, exist_ok=True)
-    submissions = areddit.redditor(username).submissions.new(limit=max_posts)
-    files = []
     try:
+        redditor = await areddit.redditor(username)
+        submissions = redditor.submissions.new(limit=max_posts)
+        files = []
         async for submission in submissions:
             # Costruisci l'URL canonico del post
             post_url = f"https://www.reddit.com{submission.permalink}" if hasattr(submission, 'permalink') else None
@@ -81,7 +82,7 @@ async def download_reddit_profile_media(username, save_dir, max_posts=None):
                 result = await download_reddit_auto(post_url, save_dir)
                 if isinstance(result, list):
                     files.extend(result)
-            # Se non c'è permalink, fallback legacy (poco probabile)
+        # Se non c'è permalink, fallback legacy (poco probabile)
         return files
     except Exception as e:
         return f"Errore: {str(e)}"
