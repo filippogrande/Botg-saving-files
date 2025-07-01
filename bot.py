@@ -88,11 +88,11 @@ async def handle_reddit_link(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text(f"Errore durante il download dal link Reddit: {str(e)}")
 
 async def handle_unknown(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Ignora i comandi noti per evitare doppia risposta
-    known_commands = ["/hello", "/start", "/help", "/elimina", "/tieni", "/trovamiduplicati"]
-    if update.message.text and any(update.message.text.startswith(cmd) for cmd in known_commands):
+    text = update.message.text or ''
+    if text.startswith("/"):
+        await update.message.reply_text("Comando non riconosciuto.")
         return
-    msg_type = update.message.effective_attachment or update.message.text or 'messaggio non identificato'
+    msg_type = update.message.effective_attachment or text or 'messaggio non identificato'
     await update.message.reply_text(f"Il tipo di file o messaggio che hai inviato non è supportato dal bot.\nTipo ricevuto: {type(msg_type).__name__}")
 
 async def handle_redgifs(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -183,8 +183,8 @@ app.add_handler(MessageHandler(filters.ANIMATION, handle_animation))
 app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://mega\\.nz/(file|folder)/"), handle_mega_link))
 app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://(www\\.)?redgifs\\.com/(users|watch)/"), handle_redgifs))
 app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://[^\\s]*reddit[^\\s]*"), handle_reddit_link))
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_unknown))
 app.add_handler(CommandHandler("trovamiduplicati", duplicate_check_and_interaction))
 
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_unknown))
 app.run_polling()
 
