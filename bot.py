@@ -180,10 +180,11 @@ app.add_handler(CommandHandler("help", help_command))
 app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 app.add_handler(MessageHandler(filters.VIDEO, handle_video))
 app.add_handler(MessageHandler(filters.ANIMATION, handle_animation))
+app.add_handler(CommandHandler("trovamiduplicati", duplicate_check_and_interaction))
 app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://mega\\.nz/(file|folder)/"), handle_mega_link))
 app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://(www\\.)?redgifs\\.com/(users|watch)/"), handle_redgifs))
 app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://[^\\s]*reddit[^\\s]*"), handle_reddit_link))
-app.add_handler(CommandHandler("trovamiduplicati", duplicate_check_and_interaction))
+
 
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_unknown))
 app.run_polling()
