@@ -125,6 +125,20 @@ async def handle_redgifs(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await update.message.reply_text("Non ho riconosciuto un link Redgifs valido.")
 
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    help_text = (
+        "🤖 *Comandi supportati dal bot:*\n\n"
+        "📷 *Media diretti:* Invia foto, video, GIF e verranno salvati automaticamente\n\n"
+        "🔗 *Link supportati:*\n"
+        "• *Reddit:* Link a post, immagini, video, gallerie, profili utente\n"
+        "• *Redgifs:* Link a singoli post o profili utente\n"
+        "• *Mega:* Link a file singoli o cartelle complete\n\n"
+        "📝 *Esempi:*\n"
+        "• https://reddit.com/user/username\n"
+        "• https://mega.nz/folder/ABC123#xyz789\n"
+    )
+    await update.message.reply_text(help_text, parse_mode='Markdown')
+
 app = ApplicationBuilder().token("7564134479:AAHKqBkapm75YYJoYRBzS1NLFQskmbC-LcY").build()
 
 app.add_handler(CommandHandler("hello", hello))
@@ -138,7 +152,6 @@ app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://(www\.)?r
 app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://(www\.)?reddit\.com/|https?://reddit\.com/|https?://i\.redd\.it/"), handle_reddit_link))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_unknown))
 app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://mega\.nz/(file|folder)/"), handle_mega_link))
-app.add_handler(CommandHandler("help", help_command))
 
 # Sposta questo handler SOPRA quello dei post reddit (handle_reddit_link) per priorità
 
