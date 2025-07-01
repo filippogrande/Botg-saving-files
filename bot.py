@@ -139,6 +139,24 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     )
     await update.message.reply_text(help_text, parse_mode='Markdown')
 
+async def handle_mega_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.strip()
+    mega_pattern = r"https?://mega\.nz/(file|folder)/[^#]+#.+"
+    match = re.search(mega_pattern, text)
+    if not match:
+        await update.message.reply_text("Non ho riconosciuto un link Mega valido.")
+        return
+    mega_url = match.group(0)
+    await update.message.reply_text("Inizio il download dal link Mega... (potrebbe volerci un po')")
+    try:
+        downloaded_files = download_mega_auto(mega_url, SAVE_DIR)
+        if downloaded_files:
+            await update.message.reply_text(f"Download Mega completato! File salvati: {len(downloaded_files)}")
+        else:
+            await update.message.reply_text("Nessun file scaricabile trovato o errore durante il download Mega.")
+    except Exception as e:
+        await update.message.reply_text(f"Errore durante il download Mega: {str(e)}")
+
 app = ApplicationBuilder().token("7564134479:AAHKqBkapm75YYJoYRBzS1NLFQskmbC-LcY").build()
 
 app.add_handler(CommandHandler("hello", hello))
@@ -151,7 +169,6 @@ app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://mega\.nz/
 app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://(www\.)?redgifs\.com/(users|watch)/"), handle_redgifs))
 app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://(www\.)?reddit\.com/|https?://reddit\.com/|https?://i\.redd\.it/"), handle_reddit_link))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_unknown))
-app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://mega\.nz/(file|folder)/"), handle_mega_link))
 
 # Sposta questo handler SOPRA quello dei post reddit (handle_reddit_link) per priorità
 
