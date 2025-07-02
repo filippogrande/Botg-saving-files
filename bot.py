@@ -9,6 +9,7 @@ from redgifs_helper import download_redgifs_profile, download_redgifs_auto
 import reddit_helper  # <--- aggiunto per gestire i profili Reddit
 from find_duplicate_helper import find_duplicates
 import asyncio
+import json
 
 # Importazione condizionale per Mega (per evitare errori se la libreria non è disponibile)
 try:
@@ -173,6 +174,7 @@ async def handle_mega_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # Sostituisci la funzione duplicate_check_and_interaction con la nuova logica automatica
 async def duplicate_check_and_interaction(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    update.message.reply_text("Controllo duplicati in corso... Questo potrebbe richiedere qualche secondo.")
     num_removed = find_duplicates(SAVE_DIR)
     if num_removed > 0:
         await update.message.reply_text(f"Rimossi automaticamente {num_removed} file duplicati.")
@@ -184,11 +186,46 @@ async def deduplication_noctx():
     if num_removed > 0:
         print(f"[Watcher] Rimossi automaticamente {num_removed} file duplicati.")
 
+async def watched_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        watch_path = os.path.join(SAVE_DIR, "reddit_watch.json")
+        user_file = os.path.join(SAVE_DIR, "reddit_notify_user.txt")
+        watched = []
+        notify_user_id = None
+        notify_user_name = None
+        if os.path.exists(watch_path):
+            with open(watch_path, "r") as f:
+                data = json.load(f)
+                watched = list(data.keys())
+        if os.path.exists(user_file):
+            with open(user_file, "r") as f:
+                notify_user_id = f.read().strip()
+        # Prova a recuperare il nome utente Telegram
+        if notify_user_id:
+            try:
+                user_obj = await context.bot.get_chat(int(notify_user_id))
+                notify_user_name = user_obj.full_name or user_obj.username or notify_user_id
+            except Exception:
+                notify_user_name = notify_user_id
+        msg = "\n".join([
+            "👁️ Profili Reddit monitorati:",
+            *(watched if watched else ["(Nessuno)"]),
+            "",
+            f"🔔 Notifiche automatiche inviate a: {notify_user_name if notify_user_name else '(Nessuno)'}"
+        ])
+        await update.message.reply_text(msg)
+        # Se chi invoca il comando è il destinatario delle notifiche, invia conferma
+        if notify_user_id and str(update.effective_user.id) == str(notify_user_id):
+            await update.message.reply_text("Riceverai le notifiche dei download automatici dal watcher Reddit.")
+    except Exception as e:
+        await update.message.reply_text(f"Errore nel recupero dei profili monitorati: {e}")
+
 app = ApplicationBuilder().token("7564134479:AAHKqBkapm75YYJoYRBzS1NLFQskmbC-LcY").build()
 
 app.add_handler(CommandHandler("hello", hello))
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("help", help_command))
+app.add_handler(CommandHandler("Watched", watched_command))
 app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 app.add_handler(MessageHandler(filters.VIDEO, handle_video))
 app.add_handler(MessageHandler(filters.ANIMATION, handle_animation))
@@ -202,7 +239,32 @@ app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_unknown))
 
 if __name__ == "__main__":
     # Avvia watcher Reddit in background
+    async def start_reddit_watcher():
+        # Notifica all'utente che il watcher è attivo
+        try:
+            notify_user_id = None
+            user_file = os.path.join(SAVE_DIR, "reddit_notify_user.txt")
+            if os.path.exists(user_file):
+                with open(user_file, "r") as f:
+                    notify_user_id = f.read().strip()
+            if notify_user_id:
+                # Recupera nome utente Telegram (opzionale)
+                try:
+                    user_obj = await app.bot.get_chat(int(notify_user_id))
+                    notify_user_name = user_obj.full_name or user_obj.username or notify_user_id
+                except Exception:
+                    notify_user_name = notify_user_id
+                msg = (
+                    "👁️ Il watcher Reddit automatico è attivo!\n"
+                    "Riceverai notifiche giornaliere sui nuovi download dei profili monitorati."
+                )
+                await app.bot.send_message(chat_id=int(notify_user_id), text=msg)
+        except Exception as e:
+            print(f"Errore invio notifica watcher Reddit: {e}")
+        # Avvia il watcher vero e proprio
+        await reddit_helper.reddit_profile_watcher_loop(SAVE_DIR, deduplication_noctx, bot=app.bot)
+
     loop = asyncio.get_event_loop()
-    loop.create_task(reddit_helper.reddit_profile_watcher_loop(SAVE_DIR, deduplication_noctx))
+    loop.create_task(start_reddit_watcher())
     app.run_polling()
 
