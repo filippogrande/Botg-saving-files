@@ -43,7 +43,13 @@ def find_duplicates(directory):
     for fname in files:
         path = os.path.join(directory, fname)
         try:
-            h = file_hash(path)
+            # Se già in hashes, riusa hash
+            if fname in hashes:
+                h = hashes[fname]
+            else:
+                h = file_hash(path)
+                if h:
+                    hashes[fname] = h
             if not h:
                 continue
             # Se già presente un file con stesso hash (ma nome diverso), elimina il duplicato
@@ -54,7 +60,6 @@ def find_duplicates(directory):
                     del hashes[fname]
             else:
                 hash_to_file[h] = fname
-                hashes[fname] = h
         except Exception as e:
             print(f"Errore su {fname}: {e}")
     # Rimuovi dal dizionario hash i file che non esistono più

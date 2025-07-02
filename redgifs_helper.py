@@ -5,6 +5,20 @@ import requests
 import re
 import time
 
+def get_redgifs_creator_from_post(post_url):
+    """
+    Estrae il nome utente del creator dalla pagina del post Redgifs.
+    """
+    try:
+        page = requests.get(post_url, timeout=10).text
+        # Cerca il link al profilo utente nella pagina
+        match = re.search(r'https://www\.redgifs\.com/users/([\w\d_-]+)', page)
+        if match:
+            return match.group(1)
+    except Exception as e:
+        print(f"Errore estrazione creator Redgifs: {e}")
+    return "redgifs"
+
 def download_redgifs_video(video_url, save_dir, prefix=None):
     """
     Scarica un video Redgifs dato il link e salva il file in save_dir.
@@ -14,7 +28,10 @@ def download_redgifs_video(video_url, save_dir, prefix=None):
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        prefix = prefix or "redgifs"
+        if not prefix or prefix == "redgifs":
+            # Prova a estrarre il creator dal post
+            creator = get_redgifs_creator_from_post(video_url)
+            prefix = creator or "redgifs"
         filename = f"{save_dir}/{prefix}_{timestamp}.mp4"
         ydl_opts = {
             'outtmpl': filename,
@@ -40,7 +57,9 @@ def download_redgifs_image_from_post(post_url, save_dir, prefix=None):
         if img_match:
             img_url = img_match.group(1)
             ext_img = os.path.splitext(img_url)[1].split('?')[0]
-            prefix = prefix or "redgifs_img"
+            if not prefix or prefix == "redgifs_img":
+                creator = get_redgifs_creator_from_post(post_url)
+                prefix = creator or "redgifs_img"
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             filename = f"{save_dir}/{prefix}_{timestamp}{ext_img}"
             r = requests.get(img_url, timeout=10)
