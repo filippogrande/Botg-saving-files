@@ -5,8 +5,8 @@ from telegram import Bot
 import reddit_helper
 from find_duplicate_helper import find_duplicates
 
-SAVE_DIR = "/mnt/truenas-bot"
-TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
+SAVE_DIR = os.environ.get("SAVE_DIR", "/mnt/truenas-bot")
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 
 async def main():
     # Invia il bot solo se esiste notify_user

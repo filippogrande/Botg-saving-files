@@ -39,8 +39,7 @@ for s in (signal.SIGINT, signal.SIGTERM):
         pass
 
 # Avvia watcher solo se richiesto
-if os.environ.get("WATCHER_ENABLED", "false").lower() in ("1","true","yes"):
-    start_daily_watcher()
+# (Watcher start moved to __main__ after app creation)
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters, CallbackQueryHandler
 import os
@@ -388,6 +387,14 @@ app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_unknown))
 if __name__ == "__main__":
     # Avvia il bot in polling. Il watcher Reddit non parte automaticamente
     # Per eseguire il watcher una sola volta usare lo script run_watcher.py
+    # Start watcher only after the Application and app.bot have been constructed
+    try:
+        if os.environ.get("WATCHER_ENABLED", "false").lower() in ("1", "true", "yes"):
+            # ensure we don't start watcher before app.bot exists
+            start_daily_watcher()
+    except Exception as e:
+        print(f"Impossibile avviare il watcher: {e}")
+
     app.run_polling()
 
 

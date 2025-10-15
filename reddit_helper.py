@@ -13,7 +13,6 @@ from redgifs_helper import download_redgifs_auto
 import json
 import asyncio
 
-import os
 
 # Configurazione Reddit asincrona (legge le credenziali dalle env vars)
 REDDIT_CLIENT_ID = os.environ.get("REDDIT_CLIENT_ID")

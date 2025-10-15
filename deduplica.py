@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 import hashlib
 from db_helper import ensure_db, insert_file, find_files_by_hash, remove_filepath
 
@@ -67,28 +68,44 @@ def deduplica_file(path, db_dir=None):
             # Se ci sono altri file con lo stesso hash, scegli comportamento:
             # - Se esiste almeno un file in /autodownloader/, preferirlo e rimuovere gli altri
             # - Altrimenti rimuovere il file corrente (più recente)
-            autodownloader_files = [os.path.abspath(s) for s in same if "/autodownloader/" in os.path.abspath(s)]
-            current_is_auto = "/autodownloader/" in os.path.abspath(path)
+            # Use Path.parts for cross-platform detection of autodownloader directory
+            autodownloader_files = [os.path.abspath(s) for s in same if 'autodownloader' in Path(os.path.abspath(s)).parts]
+            current_is_auto = 'autodownloader' in Path(os.path.abspath(path)).parts
             if autodownloader_files:
                 for s in same:
                     full_s = os.path.abspath(s)
-                    if "/autodownloader/" not in full_s:
+                    if 'autodownloader' not in Path(full_s).parts:
                         try:
                             os.remove(full_s)
-                            remove_filepath(db_dir, full_s)
                         except Exception as e:
                             print(f"Errore rimozione duplicato {full_s}: {e}")
+                        finally:
+                            # Ensure DB cleanup happens regardless of filesystem remove success
+                            try:
+                                remove_filepath(db_dir, full_s)
+                            except Exception as e:
+                                print(f"Errore rimozione dal DB per {full_s}: {e}")
                 if not current_is_auto:
                     try:
                         os.remove(path)
                     except Exception as e:
                         print(f"Errore rimozione duplicato {path}: {e}")
+                    finally:
+                        try:
+                            remove_filepath(db_dir, path)
+                        except Exception as e:
+                            print(f"Errore rimozione dal DB per {path}: {e}")
                     result = False
             else:
                 try:
                     os.remove(path)
                 except Exception as e:
                     print(f"Errore rimozione duplicato {path}: {e}")
+                finally:
+                    try:
+                        remove_filepath(db_dir, path)
+                    except Exception as e:
+                        print(f"Errore rimozione dal DB per {path}: {e}")
                 result = False
         else:
             result = True

@@ -19,7 +19,7 @@ Bot Telegram per il salvataggio automatico di media da Telegram, Reddit, Redgifs
 - **Bot Telegram**: riceve media (foto, video, animazioni) e li salva in una directory configurabile.
 - **Download da Reddit, Redgifs, Mega**: scarica media da link inviati o da profili monitorati.
 - **Deduplicazione**: elimina file duplicati tramite hash, gestendo la persistenza in SQLite (`bot.db`).
-- **Watcher Reddit**: può essere eseguito come job giornaliero (interno al bot o via CronJob) per scaricare nuovi media dai profili seguiti. (non dobbiamo scegliere quale è il metodo migliore??)
+- **Watcher Reddit**: può essere eseguito come job giornaliero (interno al bot o via CronJob) per scaricare nuovi media dai profili seguiti (dobbiamo scegliere quale sia il metodo migliore?).
 - **Notifica di avvio**: invia un messaggio Telegram a un admin/chat all’avvio del bot.
 - **Container-ready**: tutto configurabile via `.env`, pronto per Docker/Kubernetes.
 
@@ -35,8 +35,6 @@ Bot Telegram per il salvataggio automatico di media da Telegram, Reddit, Redgifs
 - **requirements.txt**: dipendenze Python.
 
 ---
-
-xw
 
 ## Note tecniche
 

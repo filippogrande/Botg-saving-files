@@ -12,6 +12,8 @@ def safe_name(name: str, max_length: int = 128) -> str:
     name = re.sub(r"\s+", "_", name)  # spazi multipli
     name = re.sub(r"_+", "_", name)  # underscore multipli
     name = name[:max_length]
+    if not name:
+       name = "unnamed"
     return name
 
 def build_path(base_dir: str, source: str, user: Optional[str], media_id: str, filename: str) -> str:

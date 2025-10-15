@@ -2,6 +2,8 @@ def count_media_by_type(directory):
     """
     Restituisce un dizionario con il conteggio di foto e video nel db.
     """
+    # Ensure DB and tables exist before opening a connection to avoid sqlite3.OperationalError
+    ensure_db(directory)
     path = get_db_path(directory)
     conn = sqlite3.connect(path)
     try:
@@ -52,6 +54,32 @@ def ensure_db(directory):
         if "filepath" not in columns:
             cur.execute("ALTER TABLE files ADD COLUMN filepath TEXT")
             conn.commit()
+            # After adding the column, ensure there are no duplicate filepath values
+            # before creating a UNIQUE index. If duplicates exist, surface them and
+            # skip creating the unique index to avoid IntegrityError.
+            try:
+                cur.execute("""
+                SELECT filepath, COUNT(*) as c FROM files
+                WHERE filepath IS NOT NULL
+                GROUP BY filepath HAVING c>1
+                """)
+                dups = cur.fetchall()
+                if dups:
+                    print(f"Attenzione: trovati {len(dups)} filepath duplicati. Alcuni esempi:")
+                    for r in dups[:10]:
+                        print(r)
+                    # Do not attempt to create unique index to avoid failure; user must
+                    # resolve duplicates manually or via a migration script.
+                else:
+                    try:
+                        cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_files_filepath_unique ON files(filepath)")
+                        conn.commit()
+                    except Exception:
+                        # If index creation fails for any reason, ignore and continue
+                        pass
+            except Exception:
+                # If the duplicate-check query fails for any reason, skip unique index creation
+                pass
         # Abilita WAL per migliori prestazioni concorrenti
         try:
             cur.execute("PRAGMA journal_mode=WAL")
