@@ -32,13 +32,27 @@ jobs:
         id: vars
         run: |
           SHORT_SHA=$(echo "${GITHUB_SHA}" | cut -c1-7)
+          BRANCH_NAME=${GITHUB_REF#refs/heads/}
+          SAFE_BRANCH=$(echo "$BRANCH_NAME" | sed 's/[^A-Za-z0-9._-]/-/g')
           echo "sha=${SHORT_SHA}" >> $GITHUB_OUTPUT
-          if git describe --tags --exact-match >/dev/null 2>&1; then
-            TAG=$(git describe --tags --exact-match)
+          if [ "$BRANCH_NAME" = "main" ]; then
+            if git describe --tags --exact-match >/dev/null 2>&1; then
+              TAG=$(git describe --tags --exact-match)
+            else
+              TAG=sha-${SHORT_SHA}
+            fi
+            echo "tag=${TAG}" >> $GITHUB_OUTPUT
+            echo "tags<<EOF" >> $GITHUB_OUTPUT
+            echo "${IMAGE_NAME}:latest" >> $GITHUB_OUTPUT
+            echo "${IMAGE_NAME}:${TAG}" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
           else
-            TAG=sha-${SHORT_SHA}
+            TAG=alpha-${SAFE_BRANCH}-sha-${SHORT_SHA}
+            echo "tag=${TAG}" >> $GITHUB_OUTPUT
+            echo "tags<<EOF" >> $GITHUB_OUTPUT
+            echo "${IMAGE_NAME}:${TAG}" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
           fi
-          echo "tag=${TAG}" >> $GITHUB_OUTPUT
 
       - name: Build and push
         uses: docker/build-push-action@v4
@@ -47,9 +61,7 @@ jobs:
           file: ./Dockerfile
           push: true
           platforms: linux/amd64,linux/arm64
-          tags: |
-            ${{ env.IMAGE_NAME }}:latest
-            ${{ env.IMAGE_NAME }}:${{ steps.vars.outputs.tag }}
+          tags: ${{ steps.vars.outputs.tags }}
 
       - name: Image digest output
         run: |
