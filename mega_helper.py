@@ -3,6 +3,8 @@ import re
 import subprocess
 from datetime import datetime
 import shutil
+from salvataggio import build_path, safe_name
+from deduplica import deduplica_file
 
 def extract_mega_info(mega_url):
     try:
@@ -58,10 +60,8 @@ def download_with_megatools(mega_url, save_dir, custom_prefix=None):
             return []
         os.makedirs(save_dir, exist_ok=True)
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        if custom_prefix:
-            temp_dir = os.path.join(save_dir, f"{custom_prefix}_temp_{timestamp}")
-        else:
-            temp_dir = os.path.join(save_dir, f"mega_temp_{timestamp}")
+        prefix = custom_prefix or "mega"
+        temp_dir = build_path(save_dir, 'Mega', prefix, timestamp, "temp")
         os.makedirs(temp_dir, exist_ok=True)
         cmd = [megadl_cmd, '--path', temp_dir, mega_url]
         try:
@@ -78,15 +78,13 @@ def download_with_megatools(mega_url, save_dir, custom_prefix=None):
                     try:
                         src_path = os.path.join(root, file)
                         rel_path = os.path.relpath(src_path, temp_dir)
-                        sanitized_name = sanitize_filename(rel_path)
-                        if custom_prefix:
-                            final_name = f"{custom_prefix}_{timestamp}_{sanitized_name}"
-                        else:
-                            final_name = f"mega_{timestamp}_{sanitized_name}"
-                        final_path = os.path.join(save_dir, final_name)
+                        sanitized_name = safe_name(rel_path)
+                        filename = f"{prefix}_{timestamp}_{sanitized_name}"
+                        final_path = build_path(save_dir, 'Mega', prefix, timestamp, filename)
                         os.makedirs(os.path.dirname(final_path), exist_ok=True)
                         shutil.move(src_path, final_path)
-                        downloaded_files.append(final_path)
+                        if deduplica_file(final_path, save_dir):
+                            downloaded_files.append(final_path)
                     except Exception as e:
                         print(f"Errore spostamento file Mega: {e}")
             if os.path.exists(temp_dir):

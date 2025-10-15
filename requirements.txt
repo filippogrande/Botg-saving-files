@@ -1,4 +1,7 @@
-python-telegram-bot
+python-telegram-bot>=20.0,<21.0
 asyncpraw
 requests
 yt-dlp
+aiosqlite
+pytest
+python-dotenv

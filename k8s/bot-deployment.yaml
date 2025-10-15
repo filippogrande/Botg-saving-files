@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bot-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: bot
+  template:
+    metadata:
+      labels:
+        app: bot
+    spec:
+      containers:
+        - name: bot
+          image: yourregistry/botg-saving-files:latest
+          env:
+            - name: SAVE_DIR
+              value: /mnt/truenas-bot
+          volumeMounts:
+            - name: save-dir
+              mountPath: /mnt/truenas-bot
+      volumes:
+        - name: save-dir
+          persistentVolumeClaim:
+            claimName: save-dir-pvc
