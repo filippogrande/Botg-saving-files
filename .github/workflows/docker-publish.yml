@@ -1,0 +1,56 @@
+name: Build and publish Docker image
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  IMAGE_NAME: filippogrande/botg-saving-files
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract version info
+        id: vars
+        run: |
+          SHORT_SHA=$(echo "${GITHUB_SHA}" | cut -c1-7)
+          echo "sha=${SHORT_SHA}" >> $GITHUB_OUTPUT
+          if git describe --tags --exact-match >/dev/null 2>&1; then
+            TAG=$(git describe --tags --exact-match)
+          else
+            TAG=sha-${SHORT_SHA}
+          fi
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+
+      - name: Build and push
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: |
+            ${{ env.IMAGE_NAME }}:latest
+            ${{ env.IMAGE_NAME }}:${{ steps.vars.outputs.tag }}
+
+      - name: Image digest output
+        run: |
+          echo "Pushed image tags: ${{ env.IMAGE_NAME }}:latest and ${{ env.IMAGE_NAME }}:${{ steps.vars.outputs.tag }}"
