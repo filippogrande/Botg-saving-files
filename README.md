@@ -61,6 +61,41 @@ Bot Telegram per il salvataggio automatico di media da Telegram, Reddit, Redgifs
   docker exec -it botg python -c 'from find_duplicate_helper import find_duplicates; print(find_duplicates("/mnt/truenas-bot"))'
   ```
 
+  ## Esecuzione con Docker Compose (senza .env)
+
+  Ho aggiunto un file `docker-compose.yml` nella root del progetto che contiene tutte le variabili d'ambiente al suo interno (in modo da non dover usare un file `.env`). Il file fornisce due servizi:
+
+  - `botg`: costruisce l'immagine dal `Dockerfile` e avvia il bot Telegram (polling).
+  - `watcher`: usa l'immagine già buildata e lancia una singola esecuzione dello script `run_watcher.py` (utile per schedulare il watcher via cron o per eseguire manualmente una run).
+
+  Prima di avviare, apri `docker-compose.yml` e sostituisci `REPLACE_WITH_YOUR_TELEGRAM_TOKEN` con il token reale del tuo bot Telegram. Altre variabili (ad esempio le credenziali Reddit) sono lasciate vuote e vanno compilate solo se vuoi usare quelle feature.
+
+  Esempio di file creato: `docker-compose.yml` (già presente nella root del repository)
+
+  Comandi utili:
+
+  ```bash
+  # Build e avvia in background
+  docker compose up -d --build
+
+  # Segui i log del bot
+  docker compose logs -f botg
+
+  # Esegui manualmente il watcher (senza avviare il service watcher)
+  docker compose run --rm watcher
+
+  # Fermare e rimuovere i container
+  docker compose down
+  ```
+
+  Note di sicurezza e best practice
+
+  - Il `docker-compose.yml` contiene segnaposto per il token: NON committare token o credenziali reali nel repository pubblico. Se preferisci non tenere il token nel file compose, usa `env_file` o Docker secrets.
+  - Il volume `./salvataggi:/mnt/truenas-bot` monta la cartella `salvataggi` nella root del progetto come storage persistente dei file scaricati. Puoi cambiare il path host a piacere.
+  - Se vuoi che il bot gestisca Mega usando `megadl` (megatools), aggiungi l'installazione di `megatools` nel `Dockerfile` o utilizza un servizio separato che esegue `megadl` sul host.
+
+  Se vuoi, posso aggiornare il `Dockerfile` per includere `megatools` o creare una versione `docker-compose.override.yml` per ambiente di produzione con secrets (Kubernetes-style). 
+
 ---
 
 ## Best practice

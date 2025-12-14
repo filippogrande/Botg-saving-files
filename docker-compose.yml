@@ -1,0 +1,43 @@
+version: "3.8"
+services:
+  botg:
+    build: .
+    image: botg:latest
+    container_name: botg
+    restart: unless-stopped
+    volumes:
+      - ./salvataggi:/mnt/truenas-bot
+    environment:
+      # OBBLIGATORIO: sostituisci con il token reale del tuo bot Telegram
+      TELEGRAM_TOKEN: "REPLACE_WITH_YOUR_TELEGRAM_TOKEN"
+      # Directory di salvataggio nel container (puoi modificare)
+      SAVE_DIR: "/mnt/truenas-bot"
+      # Lista di chat autorizzate, separata da virgola (opzionale)
+      ALLOWED_CHAT_IDS: ""
+      # Notifica di avvio (true/false) e chat id di destinazione (opzionale)
+      STARTUP_NOTIFY: "false"
+      STARTUP_CHAT_ID: ""
+      # Se true il bot avvia anche il watcher giornaliero interno (consigliato: false)
+      WATCHER_ENABLED: "false"
+      # Credenziali Reddit (opzionali, se vuoi usare asyncpraw)
+      REDDIT_CLIENT_ID: ""
+      REDDIT_CLIENT_SECRET: ""
+      REDDIT_USER_AGENT: "telegram-bot-reddit"
+    # non esporre porte pubbliche: il bot usa la Telegram API in outbound
+
+  watcher:
+    image: botg:latest
+    container_name: botg_watcher
+    depends_on:
+      - botg
+    restart: "no"
+    volumes:
+      - ./salvataggi:/mnt/truenas-bot
+    environment:
+      TELEGRAM_TOKEN: "REPLACE_WITH_YOUR_TELEGRAM_TOKEN"
+      SAVE_DIR: "/mnt/truenas-bot"
+      REDDIT_CLIENT_ID: ""
+      REDDIT_CLIENT_SECRET: ""
+      REDDIT_USER_AGENT: "telegram-bot-reddit"
+    command: ["python", "run_watcher.py"]
+    # Questo servizio esegue una sola run del watcher e termina
