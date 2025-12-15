@@ -4,6 +4,8 @@ from datetime import datetime
 import requests
 import re
 import time
+from salvataggio import build_path, safe_name
+from deduplica import deduplica_file
 
 def get_redgifs_creator_from_post(post_url):
     """
@@ -25,23 +27,24 @@ def download_redgifs_video(video_url, save_dir, prefix=None):
     Restituisce il percorso del file scaricato o None in caso di errore.
     """
     try:
-        if not os.path.exists(save_dir):
-            os.makedirs(save_dir)
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         if not prefix or prefix == "redgifs":
-            # Prova a estrarre il creator dal post
             creator = get_redgifs_creator_from_post(video_url)
             prefix = creator or "redgifs"
-        filename = f"{save_dir}/{prefix}_{timestamp}.mp4"
+        filename = f"{prefix}_{timestamp}.mp4"
+        filepath = build_path(save_dir, 'Redgifs', prefix, timestamp, filename)
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
         ydl_opts = {
-            'outtmpl': filename,
+            'outtmpl': filepath,
             'format': 'mp4/bestvideo+bestaudio/best',
             'quiet': True,
             'merge_output_format': 'mp4',
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([video_url])
-        return filename
+        if deduplica_file(filepath, save_dir):
+            return filepath
+        return None
     except Exception as e:
         print(f"Errore download video Redgifs: {e}")
         return None
@@ -61,11 +64,15 @@ def download_redgifs_image_from_post(post_url, save_dir, prefix=None):
                 creator = get_redgifs_creator_from_post(post_url)
                 prefix = creator or "redgifs_img"
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            filename = f"{save_dir}/{prefix}_{timestamp}{ext_img}"
+            filename = f"{prefix}_{timestamp}{ext_img}"
+            filepath = build_path(save_dir, 'Redgifs', prefix, timestamp, filename)
+            os.makedirs(os.path.dirname(filepath), exist_ok=True)
             r = requests.get(img_url, timeout=10)
-            with open(filename, 'wb') as f:
+            with open(filepath, 'wb') as f:
                 f.write(r.content)
-            return filename
+            if deduplica_file(filepath, save_dir):
+                return filepath
+            return None
         else:
             return None
     except Exception as e:

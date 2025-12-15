@@ -1,0 +1,68 @@
+name: Build and publish Docker image
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  IMAGE_NAME: filippogrande/botg-saving-files
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract version info
+        id: vars
+        run: |
+          SHORT_SHA=$(echo "${GITHUB_SHA}" | cut -c1-7)
+          BRANCH_NAME=${GITHUB_REF#refs/heads/}
+          SAFE_BRANCH=$(echo "$BRANCH_NAME" | sed 's/[^A-Za-z0-9._-]/-/g')
+          echo "sha=${SHORT_SHA}" >> $GITHUB_OUTPUT
+          if [ "$BRANCH_NAME" = "main" ]; then
+            if git describe --tags --exact-match >/dev/null 2>&1; then
+              TAG=$(git describe --tags --exact-match)
+            else
+              TAG=sha-${SHORT_SHA}
+            fi
+            echo "tag=${TAG}" >> $GITHUB_OUTPUT
+            echo "tags<<EOF" >> $GITHUB_OUTPUT
+            echo "${IMAGE_NAME}:latest" >> $GITHUB_OUTPUT
+            echo "${IMAGE_NAME}:${TAG}" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          else
+            TAG=alpha-${SAFE_BRANCH}-sha-${SHORT_SHA}
+            echo "tag=${TAG}" >> $GITHUB_OUTPUT
+            echo "tags<<EOF" >> $GITHUB_OUTPUT
+            echo "${IMAGE_NAME}:${TAG}" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build and push
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.vars.outputs.tags }}
+
+      - name: Image digest output
+        run: |
+          echo "Pushed image tags: ${{ env.IMAGE_NAME }}:latest and ${{ env.IMAGE_NAME }}:${{ steps.vars.outputs.tag }}"

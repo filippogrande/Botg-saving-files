@@ -1,0 +1,27 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: reddit-watcher
+spec:
+  schedule: "0 2 * * *" # ogni giorno alle 02:00
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: watcher
+              image: yourregistry/botg-saving-files:latest
+              command: ["python", "run_watcher.py"]
+              env:
+                - name: SAVE_DIR
+                  value: /mnt/truenas-bot
+              volumeMounts:
+                - name: save-dir
+                  mountPath: /mnt/truenas-bot
+          restartPolicy: OnFailure
+          volumes:
+            - name: save-dir
+              persistentVolumeClaim:
+                claimName: save-dir-pvc
