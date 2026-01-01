@@ -1,8 +1,7 @@
 version: "3.8"
 services:
   botg:
-    build: .
-    image: botg:latest
+    image: filippogrande/botg-saving-files:latest
     container_name: botg
     restart: unless-stopped
     volumes:
@@ -26,7 +25,7 @@ services:
     # non esporre porte pubbliche: il bot usa la Telegram API in outbound
 
   watcher:
-    image: botg:latest
+    image: filippogrande/botg-saving-files:latest
     container_name: botg_watcher
     depends_on:
       - botg
