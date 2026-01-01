@@ -57,6 +57,7 @@ Bot Telegram per il salvataggio automatico di media da Telegram, Reddit, Redgifs
   docker logs -f botg
   ```
 - **Esegui deduplicazione manuale**:
+
   ```bash
   docker exec -it botg python -c 'from find_duplicate_helper import find_duplicates; print(find_duplicates("/mnt/truenas-bot"))'
   ```
@@ -94,7 +95,7 @@ Bot Telegram per il salvataggio automatico di media da Telegram, Reddit, Redgifs
   - Il volume `./salvataggi:/mnt/truenas-bot` monta la cartella `salvataggi` nella root del progetto come storage persistente dei file scaricati. Puoi cambiare il path host a piacere.
   - Se vuoi che il bot gestisca Mega usando `megadl` (megatools), aggiungi l'installazione di `megatools` nel `Dockerfile` o utilizza un servizio separato che esegue `megadl` sul host.
 
-  Se vuoi, posso aggiornare il `Dockerfile` per includere `megatools` o creare una versione `docker-compose.override.yml` per ambiente di produzione con secrets (Kubernetes-style). 
+  Se vuoi, posso aggiornare il `Dockerfile` per includere `megatools` o creare una versione `docker-compose.override.yml` per ambiente di produzione con secrets (Kubernetes-style).
 
 ---
 
