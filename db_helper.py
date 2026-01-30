@@ -132,3 +132,35 @@ def remove_filepath(directory, filepath):
         conn.commit()
     finally:
         conn.close()
+
+
+def get_file_entry(directory, filepath):
+    path = get_db_path(directory)
+    conn = sqlite3.connect(path)
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT id, filename, filepath, hash, added_at FROM files WHERE filepath = ?", (filepath,))
+        row = cur.fetchone()
+        if not row:
+            return None
+        return {
+            'id': row[0],
+            'filename': row[1],
+            'filepath': row[2],
+            'hash': row[3],
+            'added_at': row[4]
+        }
+    finally:
+        conn.close()
+
+
+def update_file_hash(directory, filepath, new_hash):
+    path = get_db_path(directory)
+    conn = sqlite3.connect(path)
+    try:
+        cur = conn.cursor()
+        cur.execute("UPDATE files SET hash = ? WHERE filepath = ?", (new_hash, filepath))
+        conn.commit()
+        return cur.rowcount
+    finally:
+        conn.close()

@@ -131,3 +131,69 @@ def find_duplicates(directory, debug_callback=None):
                 lock_file.close()
         except Exception:
             pass
+
+
+def rehash_files(directory, debug_callback=None):
+    """
+    Ricalcola gli hash dei file (immagini/video) uno per uno.
+    Per ogni file:
+      - se esiste una voce nel DB e l'hash è diverso -> aggiorna l'hash
+      - se non esiste una voce -> inserisci
+    Restituisce un dict con statistiche: {updated, inserted, unchanged, errors}
+    """
+    def debug(msg):
+        print(msg)
+        if debug_callback:
+            try:
+                debug_callback(msg)
+            except Exception:
+                pass
+
+    debug(f"[DEBUG] rehash_files chiamata su: {directory}")
+    VALID_EXTS = (".jpg", ".jpeg", ".png", ".gif", ".webp", ".mp4", ".mov")
+    files = []
+    try:
+        for root, dirs, filenames in os.walk(directory):
+            for fname in filenames:
+                if fname.lower().endswith(VALID_EXTS):
+                    files.append(os.path.join(root, fname))
+    except Exception as e:
+        debug(f"[DEBUG] Errore lettura directory ricorsiva: {e}")
+        return {"updated": 0, "inserted": 0, "unchanged": 0, "errors": 1}
+
+    from db_helper import get_file_entry, insert_file, update_file_hash
+
+    updated = 0
+    inserted = 0
+    unchanged = 0
+    errors = 0
+
+    total = len(files)
+    for idx, path in enumerate(files, 1):
+        fname = os.path.basename(path)
+        if idx == 1 or idx == total or idx % 50 == 0:
+            debug(f"Rehash: {idx}/{total} file (file: {fname})")
+        try:
+            h = file_hash(path)
+            if not h:
+                errors += 1
+                continue
+            entry = get_file_entry(directory, path)
+            if entry:
+                if (entry.get('hash') or '') != h:
+                    update_file_hash(directory, path, h)
+                    updated += 1
+                else:
+                    unchanged += 1
+            else:
+                inserted_ok = insert_file(directory, path, h)
+                if inserted_ok:
+                    inserted += 1
+                else:
+                    errors += 1
+        except Exception as e:
+            debug(f"Errore rehash file {path}: {e}")
+            errors += 1
+
+    debug(f"[DEBUG] Fine rehash_files: updated={updated} inserted={inserted} unchanged={unchanged} errors={errors}")
+    return {"updated": updated, "inserted": inserted, "unchanged": unchanged, "errors": errors}

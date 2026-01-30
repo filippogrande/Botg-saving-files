@@ -140,8 +140,19 @@ async def handle_reddit_link(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if not re.search(reddit_pattern, text, re.IGNORECASE):
         await update.message.reply_text("Non ho riconosciuto un link Reddit valido.")
         return
-    # Se sembra un profilo utente reddit, chiedi conferma prima di scaricare l'intero account
-    if re.search(r"reddit\.com/(user|u)/", text, re.IGNORECASE):
+    # Determina il tipo di link (post/profile/image) usando reddit_helper se disponibile
+    is_profile = False
+    try:
+        from reddit_helper import classify_reddit_url
+        kind = classify_reddit_url(text)
+        if kind == 'profile':
+            is_profile = True
+    except Exception:
+        # fallback: consideriamo profilo solo se l'URL termina subito dopo /user/<name> o /u/<name>
+        if re.search(r"https?://(www\.)?reddit\.com/(user|u)/[\w\d_-]+(/)?$", text, re.IGNORECASE):
+            is_profile = True
+
+    if is_profile:
         context.user_data['pending_download'] = {
             'action': 'reddit_profile',
             'url': text,
@@ -306,22 +317,19 @@ async def handle_mega_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # Sostituisci la funzione duplicate_check_and_interaction con la nuova logica automatica
 async def duplicate_check_and_interaction(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Controllo duplicati in corso... Questo potrebbe richiedere qualche secondo.")
-    loop = asyncio.get_running_loop()
-    def _run_find_duplicates(path):
-        from find_duplicate_helper import find_duplicates as _fd
-        # Non passiamo il debug_callback: niente log via Telegram
-        return _fd(path)
-    try:
-        num_removed = await loop.run_in_executor(None, _run_find_duplicates, SAVE_DIR)
-        if num_removed > 0:
-            await update.message.reply_text(f"Rimossi automaticamente {num_removed} file duplicati.")
-        else:
-            await update.message.reply_text("Nessun duplicato trovato.")
-    except Exception as e:
-        await update.message.reply_text(f"Errore durante la deduplicazione: {e}")
-        import traceback
-        print('Errore deduplicazione:', traceback.format_exc())
+    # Chiedi conferma prima di ricalcolare tutti gli hash
+    if not is_authorized(update):
+        await unauthorized_reply(update)
+        return
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("Ricalcola hash e controlla", callback_data='confirm_rehash'),
+        InlineKeyboardButton("Annulla", callback_data='cancel_rehash')
+    ]])
+    context.user_data['pending_action'] = {'action': 'rehash_dedup'}
+    await update.message.reply_text(
+        "Vuoi ricalcolare gli hash di tutti i file e verificare il DB prima di rimuovere duplicati?",
+        reply_markup=keyboard
+    )
 
 # Wrapper per deduplicazione senza update/context (per watcher)
 async def deduplication_noctx():
@@ -371,6 +379,7 @@ async def handle_confirm_callback(update: Update, context: ContextTypes.DEFAULT_
     query = update.callback_query
     await query.answer()
     data = query.data
+    # Cancellation for pending download actions
     if data == 'cancel_pending':
         context.user_data.pop('pending_download', None)
         try:
@@ -379,6 +388,69 @@ async def handle_confirm_callback(update: Update, context: ContextTypes.DEFAULT_
             await query.message.reply_text('Operazione annullata.')
         return
 
+    # Cancellation for rehash/dedupe flow
+    if data in ('cancel_rehash', 'cancel_dedupe'):
+        context.user_data.pop('pending_action', None)
+        try:
+            await query.edit_message_text('Operazione annullata.')
+        except Exception:
+            await query.message.reply_text('Operazione annullata.')
+        return
+
+    # Confirm rehash request
+    if data == 'confirm_rehash':
+        pending = context.user_data.pop('pending_action', None)
+        if not pending or pending.get('action') != 'rehash_dedup':
+            try:
+                await query.edit_message_text('Nessuna azione di rehash in sospeso.')
+            except Exception:
+                await query.message.reply_text('Nessuna azione di rehash in sospeso.')
+            return
+
+        await query.edit_message_text('Avvio ricalcolo degli hash... Attendi, invierò un riepilogo.')
+        loop = asyncio.get_running_loop()
+        try:
+            from find_duplicate_helper import rehash_files
+            stats = await loop.run_in_executor(None, rehash_files, SAVE_DIR)
+            msg = (f"Ricalcolo completato. Hash aggiornati: {stats.get('updated',0)}, "
+                   f"nuovi inserimenti: {stats.get('inserted',0)}, "
+                   f"unchanged: {stats.get('unchanged',0)}, errors: {stats.get('errors',0)}")
+            await context.bot.send_message(query.from_user.id, msg)
+
+            # Ask whether to run deduplication now
+            keyboard = InlineKeyboardMarkup([[
+                InlineKeyboardButton("Rimuovi duplicati ora", callback_data='confirm_dedupe'),
+                InlineKeyboardButton("No, poi", callback_data='cancel_dedupe')
+            ]])
+            context.user_data['pending_action'] = {'action': 'run_dedupe'}
+            await context.bot.send_message(query.from_user.id, "Vuoi procedere ora con la rimozione dei duplicati?", reply_markup=keyboard)
+            return
+        except Exception as e:
+            await context.bot.send_message(query.from_user.id, f'Errore durante il ricalcolo: {e}')
+            return
+
+    # Confirm dedupe request
+    if data == 'confirm_dedupe':
+        pending = context.user_data.pop('pending_action', None)
+        if not pending or pending.get('action') != 'run_dedupe':
+            try:
+                await query.edit_message_text('Nessuna azione di deduplica in sospeso.')
+            except Exception:
+                await query.message.reply_text('Nessuna azione di deduplica in sospeso.')
+            return
+
+        await query.edit_message_text('Avvio rimozione duplicati... Ti invierò un messaggio quando è completato.')
+        loop = asyncio.get_running_loop()
+        try:
+            from find_duplicate_helper import find_duplicates as _fd
+            removed = await loop.run_in_executor(None, _fd, SAVE_DIR)
+            await context.bot.send_message(query.from_user.id, f"Rimossi {removed} file duplicati.")
+            return
+        except Exception as e:
+            await context.bot.send_message(query.from_user.id, f'Errore durante la deduplica: {e}')
+            return
+
+    # Existing download confirmation flow
     if data != 'confirm_pending':
         await query.answer()
         return
@@ -391,7 +463,7 @@ async def handle_confirm_callback(update: Update, context: ContextTypes.DEFAULT_
             await query.message.reply_text('Nessuna azione in sospeso da confermare.')
         return
 
-    # Esegui l'azione richiesta in background
+    # Esegui l'azione richiesta in background (download flows)
     await query.edit_message_text('Avvio download... Ti invierò un messaggio quando è completato.')
     loop = asyncio.get_running_loop()
     try:
@@ -470,6 +542,7 @@ app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 app.add_handler(MessageHandler(filters.VIDEO, handle_video))
 app.add_handler(MessageHandler(filters.ANIMATION, handle_animation))
 app.add_handler(CommandHandler("trovamiduplicati", duplicate_check_and_interaction))
+app.add_handler(CommandHandler("trovaduplicati", duplicate_check_and_interaction))
 app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://mega\\.nz/(file|folder)/"), handle_mega_link))
 app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://(www\\.)?redgifs\\.com/(users|watch)/"), handle_redgifs))
 app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://[^\\s]*reddit[^\\s]*"), handle_reddit_link))

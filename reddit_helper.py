@@ -35,6 +35,24 @@ else:
 WATCH_FILE = "reddit_watch.json"
 USER_FILE = "reddit_notify_user.txt"
 
+
+def classify_reddit_url(url: str) -> str:
+    """Classifica un URL Reddit in 'post', 'image', 'profile' o 'unknown' senza fare richieste di rete."""
+    post_pattern = r"https?://(www\.)?reddit\.com/r/[\w\d_]+/(comments/[\w\d]+/[\w\d_]+|s/[\w\d]+)"
+    post_user_short_pattern = r"https?://(www\.)?reddit\.com/(user|u)/[\w\d_-]+/s/[\w\d]+"
+    img_pattern = r"https?://i\.redd\.it/[\w\d]+\.[a-zA-Z0-9]+"
+    profile_pattern = r"https?://(www\.)?reddit\.com/(user|u)/([\w\d_-]+)(/)?$"
+    try:
+        if re.match(post_pattern, url, re.IGNORECASE) or re.match(post_user_short_pattern, url, re.IGNORECASE):
+            return 'post'
+        if re.match(img_pattern, url, re.IGNORECASE):
+            return 'image'
+        if re.match(profile_pattern, url, re.IGNORECASE):
+            return 'profile'
+    except Exception:
+        pass
+    return 'unknown'
+
 def download_gallery(submission, author, timestamp, save_dir):
     files = []
     if hasattr(submission, 'gallery_data') and hasattr(submission, 'media_metadata'):
