@@ -54,7 +54,7 @@ try:
     from mega_helper import download_mega_auto, is_mega_link
     MEGA_AVAILABLE = True
 except ImportError as e:
-    print(f"Mega helper non disponibile: {e}")
+    print(f"Mega helper non disponibile:  {e}")
     MEGA_AVAILABLE = False
     
     # Funzioni placeholder
