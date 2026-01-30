@@ -140,6 +140,23 @@ async def handle_reddit_link(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if not re.search(reddit_pattern, text, re.IGNORECASE):
         await update.message.reply_text("Non ho riconosciuto un link Reddit valido.")
         return
+    # Se sembra un profilo utente reddit, chiedi conferma prima di scaricare l'intero account
+    if re.search(r"reddit\.com/(user|u)/", text, re.IGNORECASE):
+        context.user_data['pending_download'] = {
+            'action': 'reddit_profile',
+            'url': text,
+            'user_id': update.effective_user.id,
+        }
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton("Conferma", callback_data='confirm_pending'),
+            InlineKeyboardButton("Annulla", callback_data='cancel_pending')
+        ]])
+        await update.message.reply_text(
+            "Hai inviato un link a un profilo Reddit. Scaricare l'intero account può richiedere molto tempo. Procedo?",
+            reply_markup=keyboard
+        )
+        return
+
     await update.message.reply_text("Inizio il download dal link Reddit... (potrebbe volerci un po')")
     try:
         # import reddit helper only when needed
@@ -192,14 +209,25 @@ async def handle_redgifs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_match = _re.search(user_pattern, text)
     if user_match:
         username = user_match.group(2)
-        await update.message.reply_text(f"Inizio a scaricare dal profilo {username}. Potrebbe volerci molto tempo...")
         allow_video = not only_photo
         allow_photo = not only_video
         max_posts = ultimi_n if ultimi_n else None
-        loop = asyncio.get_running_loop()
-        results = await loop.run_in_executor(None, download_redgifs_profile, username, SAVE_DIR, max_posts, allow_video, allow_photo)
-        await update.message.reply_text(f"Download completato. File salvati: {len(results)}")
-        await duplicate_check_and_interaction(update, context)
+        # Salva l'azione pendente nello user_data e chiedi conferma
+        context.user_data['pending_download'] = {
+            'action': 'redgifs_profile',
+            'username': username,
+            'allow_video': allow_video,
+            'allow_photo': allow_photo,
+            'max_posts': max_posts,
+        }
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton("Conferma", callback_data='confirm_pending'),
+            InlineKeyboardButton("Annulla", callback_data='cancel_pending')
+        ]])
+        await update.message.reply_text(
+            f"Hai chiesto di scaricare il profilo Redgifs '{username}'.\nQuesto può richiedere molto tempo e consumare spazio. Confermi?",
+            reply_markup=keyboard
+        )
         return
 
     post_match = _re.search(post_pattern, text)
@@ -224,15 +252,23 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     chat_id = update.effective_chat.id
     help_text = (
         "🤖 *Comandi supportati dal bot:*\n\n"
-        "📷 *Media diretti:* Invia foto, video, GIF e verranno salvati automaticamente\n\n"
-        "🔗 *Link supportati:*\n"
-        "• *Reddit:* Link a post, immagini, video, gallerie, profili utente\n"
-        "• *Redgifs:* Link a singoli post o profili utente\n"
-        "• *Mega:* Link a file singoli o cartelle complete\n\n"
-        "📝 *Esempi:*\n"
+        "*Comandi generali:*\n"
+        "• /start — Avvia il bot e mostra informazioni iniziali\n"
+        "• /hello — Saluta rapidamente\n"
+        "• /help — Mostra questo messaggio di aiuto\n"
+        "• /numeri — Conta foto e video salvati\n"
+        "• /trovamiduplicati — Avvia controllo duplicati manuale\n"
+        "• /Watched — Mostra i profili Reddit monitorati e a chi vengono inviate le notifiche\n"
+        "• /tracked — Alias di /Watched (stesso comportamento)\n\n"
+        "*Come inviare media e link:*\n"
+        "• Invia foto, video o GIF direttamente (verranno salvati)\n"
+        "• Invia link Reddit: post, immagini, video, gallerie o profili utente\n"
+        "• Invia link Redgifs: singoli post o profili utente\n"
+        "• Invia link Mega: file singoli o cartelle complete\n\n"
+        "*Esempi:*\n"
         "• https://reddit.com/user/username\n"
-        "• https://mega.nz/folder/ABC123#xyz789\n"
-        f"\n\n*DEBUG: Il tuo chat ID è:* `{{chat_id}}`"
+        "• https://mega.nz/folder/ABC123#xyz789\n\n"
+        f"*DEBUG: Il tuo chat ID è:* `{chat_id}`"
     )
     await update.message.reply_text(help_text, parse_mode='Markdown')
 
@@ -330,6 +366,64 @@ async def watched_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"Errore nel recupero dei profili monitorati: {e}")
 
+
+async def handle_confirm_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+    if data == 'cancel_pending':
+        context.user_data.pop('pending_download', None)
+        try:
+            await query.edit_message_text('Operazione annullata.')
+        except Exception:
+            await query.message.reply_text('Operazione annullata.')
+        return
+
+    if data != 'confirm_pending':
+        await query.answer()
+        return
+
+    pending = context.user_data.pop('pending_download', None)
+    if not pending:
+        try:
+            await query.edit_message_text('Nessuna azione in sospeso da confermare.')
+        except Exception:
+            await query.message.reply_text('Nessuna azione in sospeso da confermare.')
+        return
+
+    # Esegui l'azione richiesta in background
+    await query.edit_message_text('Avvio download... Ti invierò un messaggio quando è completato.')
+    loop = asyncio.get_running_loop()
+    try:
+        if pending['action'] == 'redgifs_profile':
+            from redgifs_helper import download_redgifs_profile
+            username = pending['username']
+            allow_video = pending.get('allow_video', True)
+            allow_photo = pending.get('allow_photo', True)
+            max_posts = pending.get('max_posts')
+            results = await loop.run_in_executor(None, download_redgifs_profile, username, SAVE_DIR, max_posts, allow_video, allow_photo)
+            await context.bot.send_message(query.from_user.id, f"Download completato. File salvati: {len(results)}")
+            await duplicate_check_and_interaction(update, context)
+            return
+
+        if pending['action'] == 'reddit_profile':
+            from reddit_helper import download_reddit_auto
+            url = pending.get('url')
+            result = await download_reddit_auto(url, SAVE_DIR, user_id=pending.get('user_id'))
+            if isinstance(result, list):
+                if result:
+                    await context.bot.send_message(query.from_user.id, f"Download completato! File salvati: {len(result)}")
+                else:
+                    await context.bot.send_message(query.from_user.id, "Nessun media scaricabile trovato nel link Reddit.")
+            elif isinstance(result, str):
+                await context.bot.send_message(query.from_user.id, result)
+            await duplicate_check_and_interaction(update, context)
+            return
+
+        await context.bot.send_message(query.from_user.id, 'Tipo di download non riconosciuto.')
+    except Exception as e:
+        await context.bot.send_message(query.from_user.id, f'Errore durante il download: {e}')
+
 import os
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
@@ -370,6 +464,7 @@ app.add_handler(CommandHandler("hello", hello))
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("help", help_command))
 app.add_handler(CommandHandler("Watched", watched_command))
+app.add_handler(CommandHandler("tracked", watched_command))
 app.add_handler(CommandHandler("numeri", numeri_command))
 app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 app.add_handler(MessageHandler(filters.VIDEO, handle_video))
@@ -383,6 +478,7 @@ app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://[^\\s]*re
 
 
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_unknown))
+app.add_handler(CallbackQueryHandler(handle_confirm_callback))
 
 if __name__ == "__main__":
     # Avvia il bot in polling. Il watcher Reddit non parte automaticamente

@@ -1,15 +1,4 @@
 import os
-def file_hash(path):
-    from deduplica import deduplica_file
-    try:
-        with open(path, 'rb') as f:
-            import hashlib
-            return hashlib.md5(f.read()).hexdigest()
-    except Exception as e:
-        print(f"Errore calcolo hash per {path}: {e}")
-        return None
-
-import os
 import time
 import traceback
 import fcntl
