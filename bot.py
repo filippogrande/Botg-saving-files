@@ -5,13 +5,30 @@ import signal
 watcher_task = None
 
 async def _run_daily_watcher():
+    # Schedule daily run at configured hour in configured timezone (default 03:00 Europe/Rome)
+    tz_name = os.environ.get('WATCHER_TZ', 'Europe/Rome')
+    run_hour = int(os.environ.get('WATCHER_HOUR', '3'))
     while True:
         try:
+            try:
+                tz = ZoneInfo(tz_name) if ZoneInfo else None
+            except Exception:
+                tz = None
+
+            now = datetime.now(tz) if tz else datetime.now()
+            next_run = now.replace(hour=run_hour, minute=0, second=0, microsecond=0)
+            if next_run <= now:
+                next_run = next_run + timedelta(days=1)
+            wait_seconds = (next_run - now).total_seconds()
+            # Sleep until next scheduled time
+            await asyncio.sleep(wait_seconds)
+
             from reddit_helper import reddit_watcher_once
             await reddit_watcher_once(SAVE_DIR, deduplication_noctx, bot=app.bot)
         except Exception as e:
             print(f"Errore in watcher giornaliero: {e}")
-        await asyncio.sleep(24 * 3600)
+            # On error wait a bit before retrying to avoid tight loop
+            await asyncio.sleep(60 * 60)
 
 def start_daily_watcher():
     global watcher_task
@@ -44,7 +61,11 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters, CallbackQueryHandler
 import os
 from dotenv import load_dotenv
-from datetime import datetime
+from datetime import datetime, timedelta
+try:
+    from zoneinfo import ZoneInfo
+except Exception:
+    ZoneInfo = None
 import re
 import asyncio
 import json
