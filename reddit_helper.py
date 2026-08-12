@@ -13,8 +13,9 @@ from redgifs_helper import download_redgifs_auto
 import json
 import asyncio
 
-from actor_map import resolve_actor
+from actor_map import resolve_actor, is_mapped
 from source_helper import write_source
+
 
 
 # Configurazione Reddit asincrona (legge le credenziali dalle env vars)
@@ -57,7 +58,9 @@ def classify_reddit_url(url: str) -> str:
     return 'unknown'
 
 def download_gallery(submission, author, timestamp, save_dir, stats=None):
+    author_raw = author
     author = resolve_actor('reddit', author)
+    seg2 = 'attore' if is_mapped('reddit', author_raw) else 'Reddit'
     files = []
     if hasattr(submission, 'gallery_data') and hasattr(submission, 'media_metadata'):
         for idx, item in enumerate(submission.gallery_data['items']):
@@ -66,7 +69,7 @@ def download_gallery(submission, author, timestamp, save_dir, stats=None):
                 media_url = submission.media_metadata[media_id]['s']['u']
                 ext = os.path.splitext(media_url)[1].split('?')[0]
                 filename = f"{author}_{submission.id}_{timestamp}_{idx}{ext}"
-                filepath = build_path(save_dir, 'Reddit', author, str(submission.id), filename)
+                filepath = build_path(save_dir, seg2, author, str(submission.id), filename)
                 os.makedirs(os.path.dirname(filepath), exist_ok=True)
                 r = requests.get(media_url, timeout=20)
                 with open(filepath, 'wb') as f:
@@ -82,12 +85,14 @@ def download_gallery(submission, author, timestamp, save_dir, stats=None):
     return files
 
 def download_image(submission, author, timestamp, save_dir, stats=None):
+    author_raw = author
     author = resolve_actor('reddit', author)
+    seg2 = 'attore' if is_mapped('reddit', author_raw) else 'Reddit'
     try:
         media_url = submission.url
         ext = os.path.splitext(media_url)[1]
         filename = f"{author}_{submission.id}_{timestamp}{ext}"
-        filepath = build_path(save_dir, 'Reddit', author, str(submission.id), filename)
+        filepath = build_path(save_dir, seg2, author, str(submission.id), filename)
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
         r = requests.get(media_url, timeout=20)
         with open(filepath, 'wb') as f:
@@ -104,12 +109,14 @@ def download_image(submission, author, timestamp, save_dir, stats=None):
         return []
 
 def download_video(submission, author, timestamp, save_dir, stats=None):
+    author_raw = author
     author = resolve_actor('reddit', author)
+    seg2 = 'attore' if is_mapped('reddit', author_raw) else 'Reddit'
     try:
         media_url = submission.media['reddit_video']['fallback_url']
         ext = ".mp4"
         filename = f"{author}_{submission.id}_{timestamp}{ext}"
-        filepath = build_path(save_dir, 'Reddit', author, str(submission.id), filename)
+        filepath = build_path(save_dir, seg2, author, str(submission.id), filename)
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
         r = requests.get(media_url, timeout=20)
         with open(filepath, 'wb') as f:
@@ -126,12 +133,14 @@ def download_video(submission, author, timestamp, save_dir, stats=None):
         return []
 
 def download_direct_gif_video(submission, author, timestamp, save_dir, stats=None):
+    author_raw = author
     author = resolve_actor('reddit', author)
+    seg2 = 'attore' if is_mapped('reddit', author_raw) else 'Reddit'
     try:
         media_url = submission.url
         ext = ".mp4"
         filename = f"{author}_{submission.id}_{timestamp}{ext}"
-        filepath = build_path(save_dir, 'Reddit', author, str(submission.id), filename)
+        filepath = build_path(save_dir, seg2, author, str(submission.id), filename)
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
         r = requests.get(media_url, timeout=20)
         with open(filepath, 'wb') as f:
@@ -146,7 +155,6 @@ def download_direct_gif_video(submission, author, timestamp, save_dir, stats=Non
     except Exception as e:
         print(f"Errore download gif/video diretto: {e}")
         return []
-
 def download_redgifs(submission, save_dir, stats=None):
     try:
         file_path = download_redgifs_auto(submission.url, save_dir, stats=stats)

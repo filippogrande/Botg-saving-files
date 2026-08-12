@@ -6,7 +6,7 @@ import re
 import time
 from salvataggio import build_path, safe_name
 from deduplica import deduplica_file
-from actor_map import resolve_actor
+from actor_map import resolve_actor, is_mapped
 from source_helper import write_source
 
 def get_redgifs_creator_from_post(post_url):
@@ -29,9 +29,11 @@ def download_redgifs_video(video_url, save_dir, prefix=None, stats=None):
         if not prefix or prefix == "redgifs":
             creator = get_redgifs_creator_from_post(video_url)
             prefix = creator or "redgifs"
+        prefix_raw = prefix
         prefix = resolve_actor('redgifs', prefix)
+        seg2 = 'attore' if is_mapped('redgifs', prefix_raw) else 'Redgifs'
         filename = f"{prefix}_{timestamp}.mp4"
-        filepath = build_path(save_dir, 'Redgifs', prefix, timestamp, filename)
+        filepath = build_path(save_dir, seg2, prefix, timestamp, filename)
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
         ydl_opts = {
             'outtmpl': filepath,
@@ -51,7 +53,7 @@ def download_redgifs_video(video_url, save_dir, prefix=None, stats=None):
     except Exception as e:
         print(f"Errore download video Redgifs: {e}")
         return None
-    
+
 def download_redgifs_image_from_post(post_url, save_dir, prefix=None, stats=None):
     try:
         page = requests.get(post_url, timeout=10).text
@@ -62,10 +64,12 @@ def download_redgifs_image_from_post(post_url, save_dir, prefix=None, stats=None
             if not prefix or prefix == "redgifs_img":
                 creator = get_redgifs_creator_from_post(post_url)
                 prefix = creator or "redgifs_img"
+            prefix_raw = prefix
             prefix = resolve_actor('redgifs', prefix)
+            seg2 = 'attore' if is_mapped('redgifs', prefix_raw) else 'Redgifs'
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             filename = f"{prefix}_{timestamp}{ext_img}"
-            filepath = build_path(save_dir, 'Redgifs', prefix, timestamp, filename)
+            filepath = build_path(save_dir, seg2, prefix, timestamp, filename)
             os.makedirs(os.path.dirname(filepath), exist_ok=True)
             r = requests.get(img_url, timeout=10)
             with open(filepath, 'wb') as f:
@@ -82,7 +86,7 @@ def download_redgifs_image_from_post(post_url, save_dir, prefix=None, stats=None
     except Exception as e:
         print(f"Errore download immagine Redgifs: {e}")
         return None
-      
+    
 def redgifs_post_type(post_url):
     """
     Dato un link di post Redgifs, restituisce 'video' se contiene un video,

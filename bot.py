@@ -304,6 +304,7 @@ async def handle_mega_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # Report automatico post-download (niente conferma all'utente)
 # Report automatico post-download (niente conferma all'utente)
+# Report automatico post-download (niente conferma all'utente)
 async def post_download_report(update, context, result, stats=None, label="Download"):
     if not is_authorized(update):
         return
@@ -321,6 +322,7 @@ async def post_download_report(update, context, result, stats=None, label="Downl
     line = format_actor_report_from_paths(result)
     if line:
         await update.message.reply_text(line)
+
 # Deduplica manuale con conferma (usata da /trovamiduplicati)
 async def duplicate_check_and_interaction(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_authorized(update):
