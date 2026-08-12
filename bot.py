@@ -4,6 +4,9 @@ import os
 import signal
 watcher_task = None
 
+from report_helper import format_download_report
+from deduplica import deduplica_file
+
 async def _run_daily_watcher():
     while True:
         try:
@@ -38,36 +41,28 @@ for s in (signal.SIGINT, signal.SIGTERM):
     except Exception:
         pass
 
-# Avvia watcher solo se richiesto
-# (Watcher start moved to __main__ after app creation)
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters, CallbackQueryHandler
-import os
 from dotenv import load_dotenv
 from datetime import datetime
 import re
 import asyncio
 import json
 
-# Importazione condizionale per Mega (per evitare errori se la libreria non è disponibile)
+# Importazione condizionale per Mega
 try:
     from mega_helper import download_mega_auto, is_mega_link
     MEGA_AVAILABLE = True
 except ImportError as e:
     print(f"Mega helper non disponibile:  {e}")
     MEGA_AVAILABLE = False
-    
-    # Funzioni placeholder
     def download_mega_auto(*args, **kwargs):
         return []
-    
     def is_mega_link(url):
         return False
 
-
 load_dotenv()
 
-# Lista di chat ID autorizzati (separati da virgola)
 ALLOWED_CHAT_IDS = set()
 ids_env = os.environ.get("ALLOWED_CHAT_IDS")
 if ids_env:
@@ -79,7 +74,6 @@ def is_authorized(update: Update) -> bool:
 async def unauthorized_reply(update: Update):
     await update.message.reply_text("❌ Utente non autorizzato. Contatta l'amministratore del bot.")
 
-# Directory di salvataggio (override con .env SAVE_DIR se presente)
 SAVE_DIR = os.environ.get("SAVE_DIR", "/mnt/truenas-bot")
 os.makedirs(SAVE_DIR, exist_ok=True)
 
@@ -95,41 +89,35 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     await update.message.reply_text('Benvenuto! Il bot è attivo.\nQuesto bot è per il mio uso personale e potrebbe non funzionare per altri utenti.')
 
+# ---- Forward Telegram: isolati in Telegram/ + deduplica + report ----
+async def _save_telegram(update, context, file_id, ext, msg_ok):
+    user = update.effective_user
+    file = await context.bot.get_file(file_id)
+    telegram_dir = os.path.join(SAVE_DIR, "Telegram")
+    os.makedirs(telegram_dir, exist_ok=True)
+    filename = f"{telegram_dir}/{user.id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}{ext}"
+    await file.download_to_drive(filename)
+    kept = deduplica_file(filename, SAVE_DIR)
+    await update.message.reply_text(msg_ok if kept else "File ricevuto (duplicato, scartato).")
+    await post_download_report(update, context, [filename] if kept else [], label="Telegram")
+
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_authorized(update):
         await unauthorized_reply(update)
         return
-    user = update.effective_user
-    photo = update.message.photo[-1]
-    file = await context.bot.get_file(photo.file_id)
-    filename = f"{SAVE_DIR}/{user.id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
-    await file.download_to_drive(filename)
-    await update.message.reply_text("Foto ricevuta!")
-    await duplicate_check_and_interaction(update, context)
+    await _save_telegram(update, context, update.message.photo[-1].file_id, ".jpg", "Foto ricevuta!")
 
 async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_authorized(update):
         await unauthorized_reply(update)
         return
-    user = update.effective_user
-    video = update.message.video
-    file = await context.bot.get_file(video.file_id)
-    filename = f"{SAVE_DIR}/{user.id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
-    await file.download_to_drive(filename)
-    await update.message.reply_text("Video ricevuto!")
-    await duplicate_check_and_interaction(update, context)
+    await _save_telegram(update, context, update.message.video.file_id, ".mp4", "Video ricevuto!")
 
 async def handle_animation(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_authorized(update):
         await unauthorized_reply(update)
         return
-    user = update.effective_user
-    animation = update.message.animation
-    file = await context.bot.get_file(animation.file_id)
-    filename = f"{SAVE_DIR}/{user.id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
-    await file.download_to_drive(filename)
-    await update.message.reply_text("GIF animata salvata come mp4!")
-    await duplicate_check_and_interaction(update, context)
+    await _save_telegram(update, context, update.message.animation.file_id, ".mp4", "GIF animata salvata come mp4!")
 
 async def handle_reddit_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_authorized(update):
@@ -140,15 +128,12 @@ async def handle_reddit_link(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if not re.search(reddit_pattern, text, re.IGNORECASE):
         await update.message.reply_text("Non ho riconosciuto un link Reddit valido.")
         return
-    # Determina il tipo di link (post/profile/image) usando reddit_helper se disponibile
     is_profile = False
     try:
         from reddit_helper import classify_reddit_url
-        kind = classify_reddit_url(text)
-        if kind == 'profile':
+        if classify_reddit_url(text) == 'profile':
             is_profile = True
     except Exception:
-        # fallback: consideriamo profilo solo se l'URL termina subito dopo /user/<name> o /u/<name>
         if re.search(r"https?://(www\.)?reddit\.com/(user|u)/[\w\d_-]+(/)?$", text, re.IGNORECASE):
             is_profile = True
 
@@ -170,9 +155,9 @@ async def handle_reddit_link(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     await update.message.reply_text("Inizio il download dal link Reddit... (potrebbe volerci un po')")
     try:
-        # import reddit helper only when needed
         from reddit_helper import download_reddit_auto
-        result = await download_reddit_auto(text, SAVE_DIR, user_id=update.effective_user.id)
+        stats = {}
+        result = await download_reddit_auto(text, SAVE_DIR, user_id=update.effective_user.id, stats=stats)
         if isinstance(result, list):
             if result:
                 await update.message.reply_text(f"Download completato! File salvati: {len(result)}")
@@ -185,7 +170,7 @@ async def handle_reddit_link(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 await update.message.reply_text(result)
             else:
                 await update.message.reply_text(f"Info: {result}")
-        await duplicate_check_and_interaction(update, context)
+        await post_download_report(update, context, result, stats=stats, label="Reddit")
     except Exception as e:
         await update.message.reply_text(f"Errore durante il download dal link Reddit: {str(e)}")
 
@@ -205,7 +190,6 @@ async def handle_redgifs(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await unauthorized_reply(update)
         return
     import re as _re
-    # import heavy helper only when needed
     from redgifs_helper import download_redgifs_profile, download_redgifs_auto
     text = update.message.text.strip()
     user_pattern = r"https?://(www\\.)?redgifs\\.com/users/([\\w\\d_-]+)"
@@ -223,7 +207,6 @@ async def handle_redgifs(update: Update, context: ContextTypes.DEFAULT_TYPE):
         allow_video = not only_photo
         allow_photo = not only_video
         max_posts = ultimi_n if ultimi_n else None
-        # Salva l'azione pendente nello user_data e chiedi conferma
         context.user_data['pending_download'] = {
             'action': 'redgifs_profile',
             'username': username,
@@ -247,12 +230,13 @@ async def handle_redgifs(update: Update, context: ContextTypes.DEFAULT_TYPE):
         allow_video = not only_photo
         allow_photo = not only_video
         loop = asyncio.get_running_loop()
-        file_path = await loop.run_in_executor(None, download_redgifs_auto, post_match.group(0), SAVE_DIR, None, allow_video, allow_photo)
+        stats = {}
+        file_path = await loop.run_in_executor(None, download_redgifs_auto, post_match.group(0), SAVE_DIR, None, allow_video, allow_photo, stats)
         if file_path:
             await update.message.reply_text(f"File Redgifs scaricato e salvato come {os.path.basename(file_path)}!")
         else:
             await update.message.reply_text("Nessun file scaricabile trovato nel post Redgifs.")
-        await duplicate_check_and_interaction(update, context)
+        await post_download_report(update, context, [file_path] if file_path else [], stats=stats, label="Redgifs")
         return
     await update.message.reply_text("Non ho riconosciuto un link Redgifs valido.")
 
@@ -260,7 +244,6 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if not is_authorized(update):
         await unauthorized_reply(update)
         return
-    chat_id = update.effective_chat.id
     help_text = (
         "🤖 *Comandi supportati dal bot:*\n\n"
         "*Comandi generali:*\n"
@@ -268,18 +251,20 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "• /hello — Saluta rapidamente\n"
         "• /help — Mostra questo messaggio di aiuto\n"
         "• /numeri — Conta foto e video salvati\n"
-        "• /trovamiduplicati — Avvia controllo duplicati manuale\n"
-        "• /Watched — Mostra i profili Reddit monitorati e a chi vengono inviate le notifiche\n"
-        "• /tracked — Alias di /Watched (stesso comportamento)\n\n"
+        "• /trovamiduplicati — Controllo duplicati manuale (con conferma)\n"
+        "• /recalculate — Ricalcola gli hash di tutti i file\n"
+        "• /mapactor — Mappa username → nome attore (es: /mapactor Nome reddit:user redgifs:user)\n"
+        "• /listmap — Mostra le mappature attore salvate\n"
+        "• /Watched — Profili Reddit monitorati e destinatario notifiche\n"
+        "• /tracked — Alias di /Watched\n\n"
         "*Come inviare media e link:*\n"
-        "• Invia foto, video o GIF direttamente (verranno salvati)\n"
-        "• Invia link Reddit: post, immagini, video, gallerie o profili utente\n"
-        "• Invia link Redgifs: singoli post o profili utente\n"
-        "• Invia link Mega: file singoli o cartelle complete\n\n"
+        "• Invia foto, video o GIF direttamente (salvati e deduplicati)\n"
+        "• Invia link Reddit: post, immagini, video, gallerie o profili\n"
+        "• Invia link Redgifs: singoli post o profili\n"
+        "• Invia link Mega: file singoli o cartelle\n\n"
         "*Esempi:*\n"
         "• https://reddit.com/user/username\n"
-        "• https://mega.nz/folder/ABC123#xyz789\n\n"
-        f"*DEBUG: Il tuo chat ID è:* `{chat_id}`"
+        "• https://mega.nz/folder/ABC123#xyz789"
     )
     await update.message.reply_text(help_text, parse_mode='Markdown')
 
@@ -296,7 +281,6 @@ async def handle_mega_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     mega_url = match.group(0)
     await update.message.reply_text("Inizio il download dal link Mega... (potrebbe volerci un po')")
     try:
-        # carga le funzioni Mega solo quando servono
         try:
             from mega_helper import download_mega_auto
             mega_available = True
@@ -311,27 +295,41 @@ async def handle_mega_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"Download Mega completato! File salvati: {len(downloaded_files)}")
         else:
             await update.message.reply_text("Nessun file scaricabile trovato o errore durante il download Mega.")
-        await duplicate_check_and_interaction(update, context)
+        await post_download_report(update, context, downloaded_files or [], label="Mega")
     except Exception as e:
         await update.message.reply_text(f"Errore durante il download Mega: {str(e)}")
 
-# Sostituisci la funzione duplicate_check_and_interaction con la nuova logica automatica
+# Report automatico post-download (niente conferma all'utente)
+async def post_download_report(update, context, result, stats=None, label="Download"):
+    if not is_authorized(update):
+        return
+    scaricati = 0
+    if isinstance(result, list):
+        scaricati = len(result)
+    elif isinstance(result, str):
+        if result.lower().startswith(("profilo", "errore")):
+            await update.message.reply_text(result)
+        else:
+            await update.message.reply_text(f"Info: {result}")
+        return
+    dup = (stats or {}).get('duplicates', 0)
+    await update.message.reply_text(format_download_report(label, scaricati, dup))
+
+# Deduplica manuale con conferma (usata da /trovamiduplicati)
 async def duplicate_check_and_interaction(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Chiedi conferma prima di ricalcolare tutti gli hash
     if not is_authorized(update):
         await unauthorized_reply(update)
         return
     keyboard = InlineKeyboardMarkup([[
-        InlineKeyboardButton("Ricalcola hash e controlla", callback_data='confirm_rehash'),
-        InlineKeyboardButton("Annulla", callback_data='cancel_rehash')
+        InlineKeyboardButton("Rimuovi duplicati ora", callback_data='confirm_dedupe'),
+        InlineKeyboardButton("Annulla", callback_data='cancel_dedupe')
     ]])
-    context.user_data['pending_action'] = {'action': 'rehash_dedup'}
+    context.user_data['pending_action'] = {'action': 'run_dedupe'}
     await update.message.reply_text(
-        "Vuoi ricalcolare gli hash di tutti i file e verificare il DB prima di rimuovere duplicati?",
+        "Vuoi procedere con la rimozione dei duplicati ora?",
         reply_markup=keyboard
     )
 
-# Wrapper per deduplicazione senza update/context (per watcher)
 async def deduplication_noctx():
     loop = asyncio.get_running_loop()
     from find_duplicate_helper import find_duplicates as _fd
@@ -354,7 +352,6 @@ async def watched_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if os.path.exists(user_file):
             with open(user_file, "r") as f:
                 notify_user_id = f.read().strip()
-        # Prova a recuperare il nome utente Telegram
         if notify_user_id:
             try:
                 user_obj = await context.bot.get_chat(int(notify_user_id))
@@ -368,18 +365,15 @@ async def watched_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🔔 Notifiche automatiche inviate a: {notify_user_name if notify_user_name else '(Nessuno)'}"
         ])
         await update.message.reply_text(msg)
-        # Se chi invoca il comando è il destinatario delle notifiche, invia conferma
         if notify_user_id and str(update.effective_user.id) == str(notify_user_id):
             await update.message.reply_text("Riceverai le notifiche dei download automatici dal watcher Reddit.")
     except Exception as e:
         await update.message.reply_text(f"Errore nel recupero dei profili monitorati: {e}")
 
-
 async def handle_confirm_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     data = query.data
-    # Cancellation for pending download actions
     if data == 'cancel_pending':
         context.user_data.pop('pending_download', None)
         try:
@@ -387,8 +381,6 @@ async def handle_confirm_callback(update: Update, context: ContextTypes.DEFAULT_
         except Exception:
             await query.message.reply_text('Operazione annullata.')
         return
-
-    # Cancellation for rehash/dedupe flow
     if data in ('cancel_rehash', 'cancel_dedupe'):
         context.user_data.pop('pending_action', None)
         try:
@@ -396,17 +388,15 @@ async def handle_confirm_callback(update: Update, context: ContextTypes.DEFAULT_
         except Exception:
             await query.message.reply_text('Operazione annullata.')
         return
-
-    # Confirm rehash request
     if data == 'confirm_rehash':
         pending = context.user_data.pop('pending_action', None)
-        if not pending or pending.get('action') != 'rehash_dedup':
+        if not pending or not str(pending.get('action', '')).startswith('rehash'):
             try:
                 await query.edit_message_text('Nessuna azione di rehash in sospeso.')
             except Exception:
                 await query.message.reply_text('Nessuna azione di rehash in sospeso.')
             return
-
+        action_kind = pending.get('action')
         await query.edit_message_text('Avvio ricalcolo degli hash... Attendi, invierò un riepilogo.')
         loop = asyncio.get_running_loop()
         try:
@@ -416,20 +406,17 @@ async def handle_confirm_callback(update: Update, context: ContextTypes.DEFAULT_
                    f"nuovi inserimenti: {stats.get('inserted',0)}, "
                    f"unchanged: {stats.get('unchanged',0)}, errors: {stats.get('errors',0)}")
             await context.bot.send_message(query.from_user.id, msg)
-
-            # Ask whether to run deduplication now
-            keyboard = InlineKeyboardMarkup([[
-                InlineKeyboardButton("Rimuovi duplicati ora", callback_data='confirm_dedupe'),
-                InlineKeyboardButton("No, poi", callback_data='cancel_dedupe')
-            ]])
-            context.user_data['pending_action'] = {'action': 'run_dedupe'}
-            await context.bot.send_message(query.from_user.id, "Vuoi procedere ora con la rimozione dei duplicati?", reply_markup=keyboard)
+            if action_kind == 'rehash_dedup':
+                keyboard = InlineKeyboardMarkup([[
+                    InlineKeyboardButton("Rimuovi duplicati ora", callback_data='confirm_dedupe'),
+                    InlineKeyboardButton("No, poi", callback_data='cancel_dedupe')
+                ]])
+                context.user_data['pending_action'] = {'action': 'run_dedupe'}
+                await context.bot.send_message(query.from_user.id, "Vuoi procedere ora con la rimozione dei duplicati?", reply_markup=keyboard)
             return
         except Exception as e:
             await context.bot.send_message(query.from_user.id, f'Errore durante il ricalcolo: {e}')
             return
-
-    # Confirm dedupe request
     if data == 'confirm_dedupe':
         pending = context.user_data.pop('pending_action', None)
         if not pending or pending.get('action') != 'run_dedupe':
@@ -438,7 +425,6 @@ async def handle_confirm_callback(update: Update, context: ContextTypes.DEFAULT_
             except Exception:
                 await query.message.reply_text('Nessuna azione di deduplica in sospeso.')
             return
-
         await query.edit_message_text('Avvio rimozione duplicati... Ti invierò un messaggio quando è completato.')
         loop = asyncio.get_running_loop()
         try:
@@ -449,12 +435,9 @@ async def handle_confirm_callback(update: Update, context: ContextTypes.DEFAULT_
         except Exception as e:
             await context.bot.send_message(query.from_user.id, f'Errore durante la deduplica: {e}')
             return
-
-    # Existing download confirmation flow
     if data != 'confirm_pending':
         await query.answer()
         return
-
     pending = context.user_data.pop('pending_download', None)
     if not pending:
         try:
@@ -462,8 +445,6 @@ async def handle_confirm_callback(update: Update, context: ContextTypes.DEFAULT_
         except Exception:
             await query.message.reply_text('Nessuna azione in sospeso da confermare.')
         return
-
-    # Esegui l'azione richiesta in background (download flows)
     await query.edit_message_text('Avvio download... Ti invierò un messaggio quando è completato.')
     loop = asyncio.get_running_loop()
     try:
@@ -473,15 +454,16 @@ async def handle_confirm_callback(update: Update, context: ContextTypes.DEFAULT_
             allow_video = pending.get('allow_video', True)
             allow_photo = pending.get('allow_photo', True)
             max_posts = pending.get('max_posts')
-            results = await loop.run_in_executor(None, download_redgifs_profile, username, SAVE_DIR, max_posts, allow_video, allow_photo)
+            stats = {}
+            results = await loop.run_in_executor(None, download_redgifs_profile, username, SAVE_DIR, max_posts, allow_video, allow_photo, stats)
             await context.bot.send_message(query.from_user.id, f"Download completato. File salvati: {len(results)}")
-            await duplicate_check_and_interaction(update, context)
+            await post_download_report(update, context, results, stats=stats, label="Redgifs")
             return
-
         if pending['action'] == 'reddit_profile':
             from reddit_helper import download_reddit_auto
             url = pending.get('url')
-            result = await download_reddit_auto(url, SAVE_DIR, user_id=pending.get('user_id'))
+            stats = {}
+            result = await download_reddit_auto(url, SAVE_DIR, user_id=pending.get('user_id'), stats=stats)
             if isinstance(result, list):
                 if result:
                     await context.bot.send_message(query.from_user.id, f"Download completato! File salvati: {len(result)}")
@@ -489,14 +471,57 @@ async def handle_confirm_callback(update: Update, context: ContextTypes.DEFAULT_
                     await context.bot.send_message(query.from_user.id, "Nessun media scaricabile trovato nel link Reddit.")
             elif isinstance(result, str):
                 await context.bot.send_message(query.from_user.id, result)
-            await duplicate_check_and_interaction(update, context)
+            await post_download_report(update, context, result, stats=stats, label="Reddit")
             return
-
         await context.bot.send_message(query.from_user.id, 'Tipo di download non riconosciuto.')
     except Exception as e:
         await context.bot.send_message(query.from_user.id, f'Errore durante il download: {e}')
 
-import os
+async def mapactor_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not is_authorized(update):
+        await unauthorized_reply(update)
+        return
+    text = update.message.text.strip()
+    parts = text.split(maxsplit=1)
+    if len(parts) < 2:
+        await update.message.reply_text(
+            "Uso: /mapactor <Nome Attore> reddit:<user> redgifs:<user>\n"
+            "Esempio: /mapactor Jane Doe reddit:jane_r redgifs:janedoe_rg\n"
+            "Ometti un campo se non applicabile."
+        )
+        return
+    tokens = parts[1].strip().split()
+    reddit = ""
+    redgifs = ""
+    remaining = []
+    for t in tokens:
+        if t.startswith("reddit:"):
+            reddit = t[len("reddit:"):].strip()
+        elif t.startswith("redgifs:"):
+            redgifs = t[len("redgifs:"):].strip()
+        else:
+            remaining.append(t)
+    actor = " ".join(remaining).strip()
+    if not actor:
+        await update.message.reply_text("Devi specificare almeno il nome attore.")
+        return
+    from actor_map import add_actor_mapping
+    add_actor_mapping(actor, reddit or None, redgifs or None)
+    await update.message.reply_text(
+        f"Mappatura salvata:\nAttore: {actor}\nReddit: {reddit or '-'}\nRedgifs: {redgifs or '-'}"
+    )
+
+async def listmap_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not is_authorized(update):
+        await unauthorized_reply(update)
+        return
+    from actor_map import list_actor_mappings
+    mappings = list_actor_mappings()
+    if not mappings:
+        await update.message.reply_text("Nessuna mappatura attore salvata.")
+        return
+    lines = [f"• {m.get('actor','?')} | reddit: {m.get('reddit','') or '-'} | redgifs: {m.get('redgifs','') or '-'}" for m in mappings]
+    await update.message.reply_text("Mappature attore:\n" + "\n".join(lines))
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 if not TELEGRAM_TOKEN:
@@ -504,20 +529,16 @@ if not TELEGRAM_TOKEN:
 
 app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 
-# Optional startup notification
 STARTUP_NOTIFY = os.environ.get("STARTUP_NOTIFY", "false").lower() in ("1", "true", "yes")
 STARTUP_CHAT_ID = os.environ.get("STARTUP_CHAT_ID")
 if STARTUP_NOTIFY and STARTUP_CHAT_ID:
     try:
-        # invia un messaggio di avvio al chat id configurato
         async def _notify_startup():
             await app.bot.send_message(int(STARTUP_CHAT_ID), "Bot avviato e operativo.")
-        # schedule notification shortly after start
         asyncio.get_event_loop().create_task(_notify_startup())
     except Exception as e:
         print(f"Impossibile inviare notifica di avvio: {e}")
-        
-# Comando /numeri: conta foto e video dal db
+
 async def numeri_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_authorized(update):
         await unauthorized_reply(update)
@@ -530,8 +551,6 @@ async def numeri_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"Errore nel conteggio: {e}")
 
-
-
 app.add_handler(CommandHandler("hello", hello))
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("help", help_command))
@@ -543,29 +562,37 @@ app.add_handler(MessageHandler(filters.VIDEO, handle_video))
 app.add_handler(MessageHandler(filters.ANIMATION, handle_animation))
 app.add_handler(CommandHandler("trovamiduplicati", duplicate_check_and_interaction))
 app.add_handler(CommandHandler("trovaduplicati", duplicate_check_and_interaction))
+
+async def rehash_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not is_authorized(update):
+        await unauthorized_reply(update)
+        return
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("Ricalcola gli hash", callback_data='confirm_rehash'),
+        InlineKeyboardButton("Annulla", callback_data='cancel_rehash')
+    ]])
+    context.user_data['pending_action'] = {'action': 'rehash_only'}
+    await update.message.reply_text(
+        "Se confermi, ricalcolerò gli hash di tutti i file e aggiornerò il DB (operazione potenzialmente lunga). Procedo?",
+        reply_markup=keyboard
+    )
+
+app.add_handler(CommandHandler("ricalcolahash", rehash_command))
+app.add_handler(CommandHandler("rehash", rehash_command))
+app.add_handler(CommandHandler("recalculate", rehash_command))
 app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://mega\\.nz/(file|folder)/"), handle_mega_link))
 app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://(www\\.)?redgifs\\.com/(users|watch)/"), handle_redgifs))
 app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://[^\\s]*reddit[^\\s]*"), handle_reddit_link))
-
-
-
+app.add_handler(CommandHandler("mapactor", mapactor_command))
+app.add_handler(CommandHandler("listmap", listmap_command))
 
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_unknown))
 app.add_handler(CallbackQueryHandler(handle_confirm_callback))
 
 if __name__ == "__main__":
-    # Avvia il bot in polling. Il watcher Reddit non parte automaticamente
-    # Per eseguire il watcher una sola volta usare lo script run_watcher.py
-    # Start watcher only after the Application and app.bot have been constructed
     try:
         if os.environ.get("WATCHER_ENABLED", "false").lower() in ("1", "true", "yes"):
-            # ensure we don't start watcher before app.bot exists
             start_daily_watcher()
     except Exception as e:
         print(f"Impossibile avviare il watcher: {e}")
-
     app.run_polling()
-
-
-
-

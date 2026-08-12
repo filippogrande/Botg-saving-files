@@ -6,6 +6,8 @@ import re
 import time
 from salvataggio import build_path, safe_name
 from deduplica import deduplica_file
+from actor_map import resolve_actor
+from source_helper import write_source
 
 def get_redgifs_creator_from_post(post_url):
     """
@@ -21,16 +23,13 @@ def get_redgifs_creator_from_post(post_url):
         print(f"Errore estrazione creator Redgifs: {e}")
     return "redgifs"
 
-def download_redgifs_video(video_url, save_dir, prefix=None):
-    """
-    Scarica un video Redgifs dato il link e salva il file in save_dir.
-    Restituisce il percorso del file scaricato o None in caso di errore.
-    """
+def download_redgifs_video(video_url, save_dir, prefix=None, stats=None):
     try:
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         if not prefix or prefix == "redgifs":
             creator = get_redgifs_creator_from_post(video_url)
             prefix = creator or "redgifs"
+        prefix = resolve_actor('redgifs', prefix)
         filename = f"{prefix}_{timestamp}.mp4"
         filepath = build_path(save_dir, 'Redgifs', prefix, timestamp, filename)
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
@@ -42,18 +41,18 @@ def download_redgifs_video(video_url, save_dir, prefix=None):
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([video_url])
-        if deduplica_file(filepath, save_dir):
+        kept = deduplica_file(filepath, save_dir)
+        if kept:
+            write_source(filepath, video_url)
             return filepath
+        elif stats is not None:
+            stats['duplicates'] = stats.get('duplicates', 0) + 1
         return None
     except Exception as e:
         print(f"Errore download video Redgifs: {e}")
         return None
-
-def download_redgifs_image_from_post(post_url, save_dir, prefix=None):
-    """
-    Scarica l'immagine statica (jpg/png/webp) da un singolo post Redgifs, se presente.
-    Restituisce il percorso del file scaricato o None se non trovata.
-    """
+    
+def download_redgifs_image_from_post(post_url, save_dir, prefix=None, stats=None):
     try:
         page = requests.get(post_url, timeout=10).text
         img_match = re.search(r'(https://[\w\d\./_-]+\.(?:jpg|jpeg|png|webp))', page)
@@ -63,6 +62,7 @@ def download_redgifs_image_from_post(post_url, save_dir, prefix=None):
             if not prefix or prefix == "redgifs_img":
                 creator = get_redgifs_creator_from_post(post_url)
                 prefix = creator or "redgifs_img"
+            prefix = resolve_actor('redgifs', prefix)
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             filename = f"{prefix}_{timestamp}{ext_img}"
             filepath = build_path(save_dir, 'Redgifs', prefix, timestamp, filename)
@@ -70,15 +70,19 @@ def download_redgifs_image_from_post(post_url, save_dir, prefix=None):
             r = requests.get(img_url, timeout=10)
             with open(filepath, 'wb') as f:
                 f.write(r.content)
-            if deduplica_file(filepath, save_dir):
+            kept = deduplica_file(filepath, save_dir)
+            if kept:
+                write_source(filepath, img_url)
                 return filepath
+            elif stats is not None:
+                stats['duplicates'] = stats.get('duplicates', 0) + 1
             return None
         else:
             return None
     except Exception as e:
         print(f"Errore download immagine Redgifs: {e}")
         return None
-
+      
 def redgifs_post_type(post_url):
     """
     Dato un link di post Redgifs, restituisce 'video' se contiene un video,
@@ -99,45 +103,34 @@ def redgifs_post_type(post_url):
         print(f"Errore determinazione tipo post Redgifs: {e}")
         return 'altro'
 
-def download_redgifs_auto(post_url, save_dir, prefix=None, allow_video=True, allow_photo=True):
-    """
-    Gestisce un link Redgifs: determina se è video o foto e chiama il downloader giusto.
-    Puoi bloccare il download di video o foto con allow_video/allow_photo.
-    Restituisce il percorso del file scaricato o None.
-    """
+def download_redgifs_auto(post_url, save_dir, prefix=None, allow_video=True, allow_photo=True, stats=None):
     try:
         tipo = redgifs_post_type(post_url)
         if tipo == 'video' and allow_video:
-            return download_redgifs_video(post_url, save_dir, prefix)
+            return download_redgifs_video(post_url, save_dir, prefix, stats=stats)
         elif tipo == 'foto' and allow_photo:
-            return download_redgifs_image_from_post(post_url, save_dir, prefix)
+            return download_redgifs_image_from_post(post_url, save_dir, prefix, stats=stats)
         else:
             return None
     except Exception as e:
         print(f"Errore download auto Redgifs: {e}")
         return None
-
-def download_redgifs_profile(username, save_dir, max_posts=None, allow_video=True, allow_photo=True):
-    """
-    Scarica tutti i post (video/foto) di un profilo Redgifs.
-    Se max_posts è impostato, scarica solo i primi N post trovati.
-    Puoi limitare a solo video o solo foto con allow_video/allow_photo.
-    Restituisce una lista di file scaricati.
-    """
+    
+def download_redgifs_profile(username, save_dir, max_posts=None, allow_video=True, allow_photo=True, stats=None):
     user_url = f"https://www.redgifs.com/users/{username}/creations"
     try:
         page = requests.get(user_url, timeout=10).text
         post_links = re.findall(r'https://www\.redgifs\.com/watch/[\w\d_-]+', page)
-        post_links = list(dict.fromkeys(post_links))  # Rimuove duplicati
+        post_links = list(dict.fromkeys(post_links))
         if max_posts:
             post_links = post_links[:max_posts]
         results = []
         for post_url in post_links:
             try:
-                file_path = download_redgifs_auto(post_url, save_dir, allow_video=allow_video, allow_photo=allow_photo)
+                file_path = download_redgifs_auto(post_url, save_dir, allow_video=allow_video, allow_photo=allow_photo, stats=stats)
                 if file_path:
                     results.append(file_path)
-                time.sleep(2)  # Delay tra i download per evitare anti-DDoS
+                time.sleep(2)
             except Exception as e:
                 print(f"Errore download post Redgifs {post_url}: {e}")
         return results
