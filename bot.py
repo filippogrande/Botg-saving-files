@@ -492,13 +492,11 @@ async def mapactor_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     text = update.message.text.strip()
     parts = text.split(maxsplit=1)
     if len(parts) < 2:
-        await update.message.reply_text(
-            "Uso: /mapactor <Nome Attore> reddit:<user> redgifs:<user>\n"
-            "Esempio: /mapactor Jane Doe reddit:jane_r redgifs:janedoe_rg\n"
-            "Ometti un campo se non applicabile. Se attore/username esiste già, viene unito (merge)."
-        )
+        await update.message.reply_text("Uso: /mapactor <nome attore> [reddit:user] [redgifs:user]")
         return
-    tokens = parts[1].strip().split()
+    # normalizza: tollera lo spazio dopo i due punti (reddit: user / redgifs: user)
+    spec = re.sub(r'(reddit|redgifs|actor):\s+', r'\1:', parts[1])
+    tokens = spec.split()
     reddit = ""
     redgifs = ""
     remaining = []
@@ -520,7 +518,7 @@ async def mapactor_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         f"{verb}:\nAttore: {entry.get('actor','') or '-'}\n"
         f"Reddit: {entry.get('reddit','') or '-'}\nRedgifs: {entry.get('redgifs','') or '-'}"
     )
-
+    
 async def listmap_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_authorized(update):
         await unauthorized_reply(update)
@@ -549,7 +547,9 @@ async def editactor_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             "Esempio: /editactor 1 actor:Aspen Green redgifs:aspencgreen"
         )
         return
-    sub = parts[1].strip().split()
+    # normalizza: tollera lo spazio dopo i due punti
+    spec = re.sub(r'(reddit|redgifs|actor):\s+', r'\1:', parts[1])
+    sub = spec.split()
     if not sub[0].isdigit():
         await update.message.reply_text("Il primo argomento deve essere il numero della mappatura (vedi /listmap).")
         return
@@ -563,19 +563,20 @@ async def editactor_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         elif t.startswith("redgifs:"):
             redgifs = t[len("redgifs:"):].strip()
         elif t.startswith("actor:"):
-            actor = t[len("actor:"):].strip()
+            val = t[len("actor:"):].strip()
+            actor = val if actor is None else actor + " " + val
         else:
-            actor = (actor + " " + t.strip()).strip() if actor else t.strip()
+            actor = t if actor is None else actor + " " + t
     from actor_map import update_actor_mapping
     entry, status = update_actor_mapping(identifier, actor=actor, reddit=reddit, redgifs=redgifs)
     if status == "not_found":
-        await update.message.reply_text("Mappatura non trovata.")
+        await update.message.reply_text(f"Mappatura numero {identifier} non trovata. Usa /listmap per i numeri corretti.")
         return
     await update.message.reply_text(
         f"Aggiornata:\nAttore: {entry.get('actor','') or '-'}\n"
         f"Reddit: {entry.get('reddit','') or '-'}\nRedgifs: {entry.get('redgifs','') or '-'}"
     )
-
+    
 async def delactor_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_authorized(update):
         await unauthorized_reply(update)
