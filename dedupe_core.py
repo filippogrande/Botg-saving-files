@@ -80,7 +80,8 @@ def deduplica_file(path, db_dir=None):
                   if os.path.abspath(s) != os.path.abspath(path)]
         if not others:
             insert_file(db_dir, path, h)
-            logger.info("Dedupe %s: hash %s -> NUOVO, inserito", os.path.basename(path), h[:10])
+            logger.info("Dedupe %s: hash %s -> NUOVO, inserito in %s",
+                        os.path.basename(path), h[:10], os.path.dirname(path))
             return True
         keep, drop = _keep_priority(path, others[0])
         for s in others[1:]:

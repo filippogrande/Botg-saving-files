@@ -181,12 +181,6 @@ def download_redgifs(submission, save_dir, stats=None):
 async def download_reddit_profile_media(username, save_dir, max_posts=None, stats=None):
     """
     Scarica tutti i media pubblici (immagini, video, gallerie, ecc) da un profilo Reddit.
-    Args:
-        username (str): username Reddit
-        save_dir (str): directory di salvataggio
-        max_posts (int, opzionale): massimo numero di post da scaricare
-    Returns:
-        List[str]: lista dei file scaricati
     """
     os.makedirs(save_dir, exist_ok=True)
     try:
@@ -331,6 +325,22 @@ async def reddit_watcher_once(save_dir, duplicate_handler, bot=None):
             print(f"Errore invio log Telegram: {e}")
     return {"new": total_new, "removed": total_removed}
 
+def _download_submission(submission, save_dir, stats=None):
+    author = submission.author.name if submission.author else "unknown"
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    if hasattr(submission, 'is_gallery') and submission.is_gallery:
+        return download_gallery(submission, author, timestamp, save_dir, stats=stats)
+    elif hasattr(submission, 'post_hint') and submission.post_hint == 'image':
+        return download_image(submission, author, timestamp, save_dir, stats=stats)
+    elif hasattr(submission, 'is_video') and submission.is_video and submission.media:
+        return download_video(submission, author, timestamp, save_dir, stats=stats)
+    elif any(submission.url.endswith(ext) for ext in ['.gif', '.gifv', '.webm', '.mp4']):
+        return download_direct_gif_video(submission, author, timestamp, save_dir, stats=stats)
+    elif submission.media and 'oembed' in submission.media and 'provider_name' in submission.media['oembed'] and submission.media['oembed']['provider_name'].lower() == 'redgifs':
+        return download_redgifs(submission, save_dir, stats=stats)
+    else:
+        return "Nessun media scaricabile trovato nel post Reddit."
+
 async def download_reddit_auto(url, save_dir, max_posts=None, user_id=None, stats=None):
     """
     Scarica automaticamente i media dal link Reddit fornito (profilo, post, immagine, video, ecc).
@@ -343,13 +353,23 @@ async def download_reddit_auto(url, save_dir, max_posts=None, user_id=None, stat
             return await add_reddit_profile_to_watch(username, save_dir, user_id=user_id)
         else:
             return "Link profilo Reddit non valido."
-    profile_pattern = r"https?://(www\.)?reddit\.com/(user|u)/([\w\d_-]+)"
+
+    # Post singolo dentro un profilo utente: /user/X/comments/ID/slug
+    user_post_pattern = r"https?://(www\.)?reddit\.com/(user|u)/[\w\d_-]+/comments/[\w\d]+"
+    # Profilo nudo: /user/X (niente dopo lo username, a parte lo slash finale)
+    profile_pattern = r"https?://(www\.)?reddit\.com/(user|u)/([\w\d_-]+)/?$"
     img_pattern = r"https?://i\.redd\.it/[\w\d]+\.[a-zA-Z0-9]+"
     post_pattern = r"https?://(www\.)?reddit\.com/r/[\w\d_]+/(comments/[\w\d]+/[\w\d_]+|s/[\w\d]+)"
     try:
         if re.match(profile_pattern, url):
             username = re.match(profile_pattern, url).group(3)
             return await download_reddit_profile_media(username, save_dir, max_posts=max_posts, stats=stats)
+        elif re.match(user_post_pattern, url) or re.match(post_pattern, url):
+            m = re.search(r"comments/([\w\d]+)", url)
+            if not m:
+                return "Link post Reddit non valido."
+            submission = await areddit.submission(id=m.group(1))
+            return await _download_submission(submission, save_dir, stats)
         elif re.match(img_pattern, url):
             class Dummy:
                 pass
@@ -358,22 +378,6 @@ async def download_reddit_auto(url, save_dir, max_posts=None, user_id=None, stat
             author = "direct"
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             return download_image(submission, author, timestamp, save_dir, stats=stats)
-        elif re.match(post_pattern, url):
-            submission = await areddit.submission(url=url)
-            author = submission.author.name if submission.author else "unknown"
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            if hasattr(submission, 'is_gallery') and submission.is_gallery:
-                return download_gallery(submission, author, timestamp, save_dir, stats=stats)
-            elif hasattr(submission, 'post_hint') and submission.post_hint == 'image':
-                return download_image(submission, author, timestamp, save_dir, stats=stats)
-            elif hasattr(submission, 'is_video') and submission.is_video and submission.media:
-                return download_video(submission, author, timestamp, save_dir, stats=stats)
-            elif any(submission.url.endswith(ext) for ext in ['.gif', '.gifv', '.webm', '.mp4']):
-                return download_direct_gif_video(submission, author, timestamp, save_dir, stats=stats)
-            elif submission.media and 'oembed' in submission.media and 'provider_name' in submission.media['oembed'] and submission.media['oembed']['provider_name'].lower() == 'redgifs':
-                return download_redgifs(submission, save_dir, stats=stats)
-            else:
-                return "Nessun media scaricabile trovato nel post Reddit."
         else:
             return "Link Reddit non riconosciuto o non supportato."
     except Exception as e:
