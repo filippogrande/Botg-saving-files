@@ -6,6 +6,7 @@ watcher_task = None
 
 from report_helper import format_download_report
 from deduplica import deduplica_file
+from actor_report import format_actor_report_from_paths
 
 async def _run_daily_watcher():
     while True:
@@ -49,7 +50,6 @@ import re
 import asyncio
 import json
 
-# Importazione condizionale per Mega
 try:
     from mega_helper import download_mega_auto, is_mega_link
     MEGA_AVAILABLE = True
@@ -133,6 +133,7 @@ async def handle_reddit_link(update: Update, context: ContextTypes.DEFAULT_TYPE)
         from reddit_helper import classify_reddit_url
         if classify_reddit_url(text) == 'profile':
             is_profile = True
+        
     except Exception:
         if re.search(r"https?://(www\.)?reddit\.com/(user|u)/[\w\d_-]+(/)?$", text, re.IGNORECASE):
             is_profile = True
@@ -192,11 +193,11 @@ async def handle_redgifs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     import re as _re
     from redgifs_helper import download_redgifs_profile, download_redgifs_auto
     text = update.message.text.strip()
-    user_pattern = r"https?://(www\\.)?redgifs\\.com/users/([\\w\\d_-]+)"
-    post_pattern = r"https?://(www\\.)?redgifs\\.com/watch/[\\w\\d_-]+"
+    user_pattern = r"https?://(www\.)?redgifs\.com/users/([\w\d_-]+)"
+    post_pattern = r"https?://(www\.)?redgifs\.com/watch/[\w\d_-]+"
     only_video = text.lower().startswith("solo video")
     only_photo = text.lower().startswith("solo foto")
-    ultimi_match = _re.match(r"ultimi (\\d+) post", text.lower())
+    ultimi_match = _re.match(r"ultimi (\d+) post", text.lower())
     ultimi_n = int(ultimi_match.group(1)) if ultimi_match else None
     if (text.lower().startswith("solo ") and not (only_video or only_photo)) or (text.lower().startswith("ultimi") and not ultimi_match):
         await update.message.reply_text("Comando non riconosciuto. Usa solo video, solo foto, ultimi N post o solo il link utente Redgifs.")
@@ -253,8 +254,10 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "• /numeri — Conta foto e video salvati\n"
         "• /trovamiduplicati — Controllo duplicati manuale (con conferma)\n"
         "• /recalculate — Ricalcola gli hash di tutti i file\n"
-        "• /mapactor — Mappa username → nome attore (es: /mapactor Nome reddit:user redgifs:user)\n"
-        "• /listmap — Mostra le mappature attore salvate\n"
+        "• /mapactor — Mappa username → nome attore (merge se esiste già)\n"
+        "• /listmap — Mostra le mappature attore (con indice)\n"
+        "• /editactor — Modifica una mappatura esistente (es: /editactor 1 redgifs:user)\n"
+        "• /delactor — Rimuove una mappatura (es: /delactor 1)\n"
         "• /Watched — Profili Reddit monitorati e destinatario notifiche\n"
         "• /tracked — Alias di /Watched\n\n"
         "*Come inviare media e link:*\n"
@@ -273,7 +276,7 @@ async def handle_mega_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await unauthorized_reply(update)
         return
     text = update.message.text.strip()
-    mega_pattern = r"https?://mega\\.nz/(file|folder)/[^#]+#.+"
+    mega_pattern = r"https?://mega\.nz/(file|folder)/[^#]+#.+"
     match = re.search(mega_pattern, text)
     if not match:
         await update.message.reply_text("Non ho riconosciuto un link Mega valido.")
@@ -300,6 +303,7 @@ async def handle_mega_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Errore durante il download Mega: {str(e)}")
 
 # Report automatico post-download (niente conferma all'utente)
+# Report automatico post-download (niente conferma all'utente)
 async def post_download_report(update, context, result, stats=None, label="Download"):
     if not is_authorized(update):
         return
@@ -314,7 +318,9 @@ async def post_download_report(update, context, result, stats=None, label="Downl
         return
     dup = (stats or {}).get('duplicates', 0)
     await update.message.reply_text(format_download_report(label, scaricati, dup))
-
+    line = format_actor_report_from_paths(result)
+    if line:
+        await update.message.reply_text(line)
 # Deduplica manuale con conferma (usata da /trovamiduplicati)
 async def duplicate_check_and_interaction(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_authorized(update):
@@ -487,7 +493,7 @@ async def mapactor_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         await update.message.reply_text(
             "Uso: /mapactor <Nome Attore> reddit:<user> redgifs:<user>\n"
             "Esempio: /mapactor Jane Doe reddit:jane_r redgifs:janedoe_rg\n"
-            "Ometti un campo se non applicabile."
+            "Ometti un campo se non applicabile. Se attore/username esiste già, viene unito (merge)."
         )
         return
     tokens = parts[1].strip().split()
@@ -506,9 +512,11 @@ async def mapactor_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         await update.message.reply_text("Devi specificare almeno il nome attore.")
         return
     from actor_map import add_actor_mapping
-    add_actor_mapping(actor, reddit or None, redgifs or None)
+    entry, status = add_actor_mapping(actor, reddit or None, redgifs or None)
+    verb = "Unità a mappatura esistente" if status == "merged" else "Mappatura salvata"
     await update.message.reply_text(
-        f"Mappatura salvata:\nAttore: {actor}\nReddit: {reddit or '-'}\nRedgifs: {redgifs or '-'}"
+        f"{verb}:\nAttore: {entry.get('actor','') or '-'}\n"
+        f"Reddit: {entry.get('reddit','') or '-'}\nRedgifs: {entry.get('redgifs','') or '-'}"
     )
 
 async def listmap_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -520,8 +528,64 @@ async def listmap_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if not mappings:
         await update.message.reply_text("Nessuna mappatura attore salvata.")
         return
-    lines = [f"• {m.get('actor','?')} | reddit: {m.get('reddit','') or '-'} | redgifs: {m.get('redgifs','') or '-'}" for m in mappings]
-    await update.message.reply_text("Mappature attore:\n" + "\n".join(lines))
+    lines = [f"{i+1}) {m.get('actor','?')} | reddit: {m.get('reddit','') or '-'} | redgifs: {m.get('redgifs','') or '-'}"
+             for i, m in enumerate(mappings)]
+    await update.message.reply_text(
+        "Mappature attore:\n" + "\n".join(lines) +
+        "\n\nUsa /editactor <num> ... o /delactor <num> per modificare/rimuovere."
+    )
+
+async def editactor_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not is_authorized(update):
+        await unauthorized_reply(update)
+        return
+    text = update.message.text.strip()
+    parts = text.split(maxsplit=1)
+    if len(parts) < 2:
+        await update.message.reply_text(
+            "Uso: /editactor <num> [actor:Nome] [reddit:user] [redgifs:user]\n"
+            "Esempio: /editactor 1 actor:Aspen Green redgifs:aspencgreen"
+        )
+        return
+    sub = parts[1].strip().split()
+    if not sub[0].isdigit():
+        await update.message.reply_text("Il primo argomento deve essere il numero della mappatura (vedi /listmap).")
+        return
+    identifier = sub[0]
+    reddit = None
+    redgifs = None
+    actor = None
+    for t in sub[1:]:
+        if t.startswith("reddit:"):
+            reddit = t[len("reddit:"):].strip()
+        elif t.startswith("redgifs:"):
+            redgifs = t[len("redgifs:"):].strip()
+        elif t.startswith("actor:"):
+            actor = t[len("actor:"):].strip()
+        else:
+            actor = (actor + " " + t.strip()).strip() if actor else t.strip()
+    from actor_map import update_actor_mapping
+    entry, status = update_actor_mapping(identifier, actor=actor, reddit=reddit, redgifs=redgifs)
+    if status == "not_found":
+        await update.message.reply_text("Mappatura non trovata.")
+        return
+    await update.message.reply_text(
+        f"Aggiornata:\nAttore: {entry.get('actor','') or '-'}\n"
+        f"Reddit: {entry.get('reddit','') or '-'}\nRedgifs: {entry.get('redgifs','') or '-'}"
+    )
+
+async def delactor_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not is_authorized(update):
+        await unauthorized_reply(update)
+        return
+    text = update.message.text.strip()
+    parts = text.split(maxsplit=1)
+    if len(parts) < 2:
+        await update.message.reply_text("Uso: /delactor <num>  (vedi /listmap)")
+        return
+    from actor_map import remove_actor_mapping
+    ok = remove_actor_mapping(parts[1].strip())
+    await update.message.reply_text("Mappatura rimossa." if ok else "Mappatura non trovata.")
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 if not TELEGRAM_TOKEN:
@@ -580,11 +644,13 @@ async def rehash_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 app.add_handler(CommandHandler("ricalcolahash", rehash_command))
 app.add_handler(CommandHandler("rehash", rehash_command))
 app.add_handler(CommandHandler("recalculate", rehash_command))
-app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://mega\\.nz/(file|folder)/"), handle_mega_link))
-app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://(www\\.)?redgifs\\.com/(users|watch)/"), handle_redgifs))
-app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://[^\\s]*reddit[^\\s]*"), handle_reddit_link))
+app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://mega\.nz/(file|folder)/"), handle_mega_link))
+app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://(www\.)?redgifs\.com/(users|watch)/"), handle_redgifs))
+app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"https?://[^\s]*reddit[^\s]*"), handle_reddit_link))
 app.add_handler(CommandHandler("mapactor", mapactor_command))
 app.add_handler(CommandHandler("listmap", listmap_command))
+app.add_handler(CommandHandler("editactor", editactor_command))
+app.add_handler(CommandHandler("delactor", delactor_command))
 
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_unknown))
 app.add_handler(CallbackQueryHandler(handle_confirm_callback))
