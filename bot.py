@@ -7,6 +7,7 @@ watcher_task = None
 from report_helper import format_download_report
 from deduplica import deduplica_file
 from actor_report import format_actor_report_from_paths
+from log_helper import setup_logging
 
 async def _run_daily_watcher():
     while True:
@@ -76,6 +77,7 @@ async def unauthorized_reply(update: Update):
 
 SAVE_DIR = os.environ.get("SAVE_DIR", "/mnt/truenas-bot")
 os.makedirs(SAVE_DIR, exist_ok=True)
+setup_logging(SAVE_DIR)
 
 async def hello(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_authorized(update):
@@ -302,8 +304,6 @@ async def handle_mega_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"Errore durante il download Mega: {str(e)}")
 
-# Report automatico post-download (niente conferma all'utente)
-# Report automatico post-download (niente conferma all'utente)
 # Report automatico post-download (niente conferma all'utente)
 async def post_download_report(update, context, result, stats=None, label="Download"):
     if not is_authorized(update):

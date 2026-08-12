@@ -15,7 +15,8 @@ import asyncio
 
 from actor_map import resolve_actor, is_mapped
 from source_helper import write_source
-
+import logging
+logger = logging.getLogger(__name__)
 
 
 # Configurazione Reddit asincrona (legge le credenziali dalle env vars)
@@ -62,8 +63,11 @@ def download_gallery(submission, author, timestamp, save_dir, stats=None):
     author = resolve_actor('reddit', author)
     seg2 = 'attore' if is_mapped('reddit', author_raw) else 'Reddit'
     files = []
-    if hasattr(submission, 'gallery_data') and hasattr(submission, 'media_metadata'):
-        for idx, item in enumerate(submission.gallery_data['items']):
+    gallery = getattr(submission, 'gallery_data', None)
+    meta_items = gallery.get('items', []) if isinstance(gallery, dict) else []
+    total = len(meta_items)
+    if gallery is not None and hasattr(submission, 'media_metadata'):
+        for idx, item in enumerate(meta_items):
             try:
                 media_id = item['media_id']
                 media_url = submission.media_metadata[media_id]['s']['u']
@@ -76,12 +80,14 @@ def download_gallery(submission, author, timestamp, save_dir, stats=None):
                     f.write(r.content)
                 kept = deduplica_file(filepath, save_dir)
                 if kept:
-                    write_source(filepath, media_url)
+                    write_source(filepath, media_url, meta={"author": author, "platform": "reddit", "post_id": str(submission.id), "saved_at": timestamp})
                     files.append(filepath)
+                    logger.info("Reddit gallery %d/%d salvato: %s", idx + 1, total, os.path.basename(filepath))
                 elif stats is not None:
                     stats['duplicates'] = stats.get('duplicates', 0) + 1
+                    logger.info("Reddit gallery %d/%d duplicato: %s", idx + 1, total, os.path.basename(filepath))
             except Exception as e:
-                print(f"Errore download gallery item {idx}: {e}")
+                logger.error("Errore download gallery item %d: %s", idx, e)
     return files
 
 def download_image(submission, author, timestamp, save_dir, stats=None):
@@ -99,13 +105,15 @@ def download_image(submission, author, timestamp, save_dir, stats=None):
             f.write(r.content)
         kept = deduplica_file(filepath, save_dir)
         if kept:
-            write_source(filepath, media_url)
+            write_source(filepath, media_url, meta={"author": author, "platform": "reddit", "post_id": str(submission.id), "saved_at": timestamp})
+            logger.info("Reddit immagine salvata: %s", os.path.basename(filepath))
             return [filepath]
         elif stats is not None:
             stats['duplicates'] = stats.get('duplicates', 0) + 1
+            logger.info("Reddit immagine duplicata: %s", os.path.basename(filepath))
         return []
     except Exception as e:
-        print(f"Errore download immagine: {e}")
+        logger.error("Errore download immagine: %s", e)
         return []
 
 def download_video(submission, author, timestamp, save_dir, stats=None):
@@ -123,13 +131,15 @@ def download_video(submission, author, timestamp, save_dir, stats=None):
             f.write(r.content)
         kept = deduplica_file(filepath, save_dir)
         if kept:
-            write_source(filepath, media_url)
+            write_source(filepath, media_url, meta={"author": author, "platform": "reddit", "post_id": str(submission.id), "saved_at": timestamp})
+            logger.info("Reddit video salvato: %s", os.path.basename(filepath))
             return [filepath]
         elif stats is not None:
             stats['duplicates'] = stats.get('duplicates', 0) + 1
+            logger.info("Reddit video duplicato: %s", os.path.basename(filepath))
         return []
     except Exception as e:
-        print(f"Errore download video: {e}")
+        logger.error("Errore download video: %s", e)
         return []
 
 def download_direct_gif_video(submission, author, timestamp, save_dir, stats=None):
@@ -147,14 +157,17 @@ def download_direct_gif_video(submission, author, timestamp, save_dir, stats=Non
             f.write(r.content)
         kept = deduplica_file(filepath, save_dir)
         if kept:
-            write_source(filepath, media_url)
+            write_source(filepath, media_url, meta={"author": author, "platform": "reddit", "post_id": str(submission.id), "saved_at": timestamp})
+            logger.info("Reddit gif/video diretto salvato: %s", os.path.basename(filepath))
             return [filepath]
         elif stats is not None:
             stats['duplicates'] = stats.get('duplicates', 0) + 1
+            logger.info("Reddit gif/video diretto duplicato: %s", os.path.basename(filepath))
         return []
     except Exception as e:
-        print(f"Errore download gif/video diretto: {e}")
+        logger.error("Errore download gif/video diretto: %s", e)
         return []
+    
 def download_redgifs(submission, save_dir, stats=None):
     try:
         file_path = download_redgifs_auto(submission.url, save_dir, stats=stats)

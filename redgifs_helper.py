@@ -8,6 +8,8 @@ from salvataggio import build_path, safe_name
 from deduplica import deduplica_file
 from actor_map import resolve_actor, is_mapped
 from source_helper import write_source
+import logging
+logger = logging.getLogger(__name__)
 
 def get_redgifs_creator_from_post(post_url):
     """
@@ -45,13 +47,15 @@ def download_redgifs_video(video_url, save_dir, prefix=None, stats=None):
             ydl.download([video_url])
         kept = deduplica_file(filepath, save_dir)
         if kept:
-            write_source(filepath, video_url)
+            write_source(filepath, video_url, meta={"author": prefix, "platform": "redgifs", "saved_at": timestamp})
+            logger.info("Redgifs video salvato: %s", os.path.basename(filepath))
             return filepath
         elif stats is not None:
             stats['duplicates'] = stats.get('duplicates', 0) + 1
+            logger.info("Redgfs video duplicato: %s", os.path.basename(filepath))
         return None
     except Exception as e:
-        print(f"Errore download video Redgifs: {e}")
+        logger.error("Errore download video Redgifs: %s", e)
         return None
 
 def download_redgifs_image_from_post(post_url, save_dir, prefix=None, stats=None):
@@ -76,17 +80,19 @@ def download_redgifs_image_from_post(post_url, save_dir, prefix=None, stats=None
                 f.write(r.content)
             kept = deduplica_file(filepath, save_dir)
             if kept:
-                write_source(filepath, img_url)
+                write_source(filepath, img_url, meta={"author": prefix, "platform": "redgifs", "saved_at": timestamp})
+                logger.info("Redgifs immagine salvata: %s", os.path.basename(filepath))
                 return filepath
             elif stats is not None:
                 stats['duplicates'] = stats.get('duplicates', 0) + 1
+                logger.info("Redgifs immagine duplicata: %s", os.path.basename(filepath))
             return None
         else:
             return None
     except Exception as e:
-        print(f"Errore download immagine Redgifs: {e}")
+        logger.error("Errore download immagine Redgifs: %s", e)
         return None
-    
+
 def redgifs_post_type(post_url):
     """
     Dato un link di post Redgifs, restituisce 'video' se contiene un video,
