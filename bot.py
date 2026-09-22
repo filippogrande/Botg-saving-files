@@ -45,11 +45,16 @@ for s in (signal.SIGINT, signal.SIGTERM):
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters, CallbackQueryHandler
+from telegram.error import BadRequest, TimedOut, NetworkError
 from dotenv import load_dotenv
 from datetime import datetime
 import re
 import asyncio
 import json
+
+# Telegram Bot API limita il download di file tramite bot a 20 MB.
+# Con un local Bot API server (telegram-bot-api --local) il limite viene rimosso.
+MAX_BOT_API_FILE_BYTES = 20 * 1024 * 1024
 
 try:
     from mega_helper import download_mega_auto, is_mega_link
@@ -92,13 +97,38 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text('Benvenuto! Il bot è attivo.\nQuesto bot è per il mio uso personale e potrebbe non funzionare per altri utenti.')
 
 # ---- Forward Telegram: isolati in Telegram/ + deduplica + report ----
+def _attachment_size(update: Update, ext: str):
+    """Restituisce la dimensione in byte dell'allegato in arrivo, o None se sconosciuta."""
+    msg = update.message
+    if ext == ".jpg" and msg.photo:
+        return msg.photo[-1].file_size
+    if ext == ".mp4" and msg.video:
+        return msg.video.file_size
+    if ext == ".mp4" and msg.animation:
+        return msg.animation.file_size
+    return None
+
 async def _save_telegram(update, context, file_id, ext, msg_ok):
     user = update.effective_user
-    file = await context.bot.get_file(file_id)
-    telegram_dir = os.path.join(SAVE_DIR, "Telegram")
-    os.makedirs(telegram_dir, exist_ok=True)
-    filename = f"{telegram_dir}/{user.id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}{ext}"
-    await file.download_to_drive(filename)
+    # Blocca subito i file troppo grandi per il Bot API standard (limite 20 MB su download).
+    # Se e' attivo il local Bot API server, il limite viene rimosso e questo check e' superato.
+    size = _attachment_size(update, ext)
+    if size is not None and size > MAX_BOT_API_FILE_BYTES:
+        await update.message.reply_text(
+            "❌ File troppo grande (>20 MB): il Telegram Bot API standard non permette al bot di "
+            "scaricare file di questo peso. Caricalo direttamente nella cartella di Stash "
+            "oppure invia un link (Reddit / Redgifs / Mega)."
+        )
+        return
+    try:
+        file = await context.bot.get_file(file_id)
+        telegram_dir = os.path.join(SAVE_DIR, "Telegram")
+        os.makedirs(telegram_dir, exist_ok=True)
+        filename = f"{telegram_dir}/{user.id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}{ext}"
+        await file.download_to_drive(filename)
+    except (BadRequest, TimedOut, NetworkError) as e:
+        await update.message.reply_text(f"❌ Impossibile scaricare il file: {e}")
+        return
     kept = deduplica_file(filename, SAVE_DIR)
     await update.message.reply_text(msg_ok if kept else "File ricevuto (duplicato, scartato).")
     await post_download_report(update, context, [filename] if kept else [], label="Telegram")
@@ -414,7 +444,7 @@ async def handle_confirm_callback(update: Update, context: ContextTypes.DEFAULT_
                    f"nuovi inserimenti: {stats.get('inserted',0)}, "
                    f"unchanged: {stats.get('unchanged',0)}, errors: {stats.get('errors',0)}")
             await context.bot.send_message(query.from_user.id, msg)
-            if action_kind == 'rehash_dedup':
+            if action_kind == 'rehash_dedupe':
                 keyboard = InlineKeyboardMarkup([[
                     InlineKeyboardButton("Rimuovi duplicati ora", callback_data='confirm_dedupe'),
                     InlineKeyboardButton("No, poi", callback_data='cancel_dedupe')
@@ -594,7 +624,28 @@ TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 if not TELEGRAM_TOKEN:
     raise RuntimeError("TELEGRAM_TOKEN non impostato nelle variabili d'ambiente")
 
-app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+# Se e' configurato un local Bot API server, usa la sua base_url.
+# Altrimenti si connette al Bot API ufficiale di Telegram (limite 20 MB).
+BOT_API_BASE_URL = os.environ.get("BOT_API_BASE_URL", "https://api.telegram.org/bot")
+
+app = ApplicationBuilder().token(TELEGRAM_TOKEN).base_url(BOT_API_BASE_URL).build()
+
+# Error handler globale: evita il log "No error handlers are registered" e
+# informa l'utente invece di lasciare l'errore silenzioso nel daemon.
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    print(f"[BOT] Eccezione non gestita: {context.error}")
+    err = context.error
+    # Messaggio utile all'utente solo per errori di rete/Telegram, non per altro.
+    if isinstance(err, (BadRequest, TimedOut, NetworkError)):
+        try:
+            if update and isinstance(update, Update) and update.effective_message:
+                await update.effective_message.reply_text(
+                    "❌ Si è verificato un errore di rete con Telegram. Riprova tra un momento."
+                )
+        except Exception:
+            pass
+
+app.add_error_handler(error_handler)
 
 STARTUP_NOTIFY = os.environ.get("STARTUP_NOTIFY", "false").lower() in ("1", "true", "yes")
 STARTUP_CHAT_ID = os.environ.get("STARTUP_CHAT_ID")
@@ -663,5 +714,5 @@ if __name__ == "__main__":
         if os.environ.get("WATCHER_ENABLED", "false").lower() in ("1", "true", "yes"):
             start_daily_watcher()
     except Exception as e:
-        print(f"Impossibile avviare il watcher: {e}")
+        print(f"Impossibile avviare the watcher: {e}")
     app.run_polling()
