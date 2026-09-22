@@ -1,4 +1,4 @@
-python-telegram-bot>=20.0,<21.0
+python-telegram-bot>=22.8,<23.0
 asyncpraw
 requests
 yt-dlp
