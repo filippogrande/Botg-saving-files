@@ -48,7 +48,7 @@ python bot.py
 
 ```bash
 docker compose up -d --build
- docker compose logs -f botg
+docker compose logs -f botg
 ```
 
 Servizi:
@@ -157,3 +157,15 @@ docker logs -f botg               # log in streaming
 - Se `ALLOWED_CHAT_IDS` resta vuota, chiunque scriva al bot e' autorizzato: impostala in
   produzione.
 - Proteggi `SAVE_DIR`: contiene media scaricati e il DB.
+
+## Miglioramenti pianificati
+
+Dal vecchio README, non ancora implementati:
+
+- **Download offline**: gestire i messaggi arrivati mentre il server era spento. Non e'
+  implementato.
+- **Logging strutturato e metriche Prometheus**: oggi il logging e' testuale (stdout +
+  `botg.log`) e molte errori finiscono in `print`, non nel log.
+- **Healthcheck / readiness probe** per Kubernetes (vedi `docs/REFERENCE.md#limiti-noti`).
+- **Refactor di `reddit_helper.py`**: lazy init/close del client Reddit in tutte le
+  funzioni (vedi `docs/REFERENCE.md#limiti-noti`).
