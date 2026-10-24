@@ -9,9 +9,9 @@
 Una riga per cosa ti potrebbe essere chiesto di cambiare. **Richiesta -> file -> entry point.**
 Se per trovare il file ti serve altro, la riga e' sbagliata.
 
-Nota sui file wrapper: `deduplica.py`, `find_duplicate_helper.py` e `report_helper.py`
-sono wrapper sottili (re-export) verso `dedupe_core.py` e verso se stessi; i call site
-importano da li', quindi la mappa punta li'. I simboli veri stanno nel modulo indicato in
+Nota sui wrapper: `deduplica.py`, `find_duplicate_helper.py` e `report_helper.py`
+sono wrapper sottili (re-export) verso `dedupe_core.py`; i call site importano da li',
+quindi la mappa nomina i wrapper. I simboli veri stanno in `dedupe_core.py`, indicato in
 "Entry point".
 
 ## Entry point e assemblaggio
@@ -21,7 +21,7 @@ importano da li', quindi la mappa punta li'. I simboli veri stanno nel modulo in
 | Avviare il bot Telegram (polling, handler, watcher interno) | `bot.py` | `app`, `main` |
 | Wire registrare un comando o un handler su `app` | `bot.py` | `app.add_handler`, `CommandHandler` |
 | Avviare il watcher Reddit una sola volta (CronJob) | `run_watcher.py` | `main` |
-| Inizializzare il client Reddit async (lazy, a modulo import) | `reddit_helper.py` | `areddit` |
+| Inizializzare il client Reddit async (a modulo import) | `reddit_helper.py` | `areddit` |
 | Inizializzare il logging (stdout + file rotante) | `log_helper.py` | `setup_logging` |
 
 ## Comandi Telegram
@@ -40,7 +40,7 @@ importano da li', quindi la mappa punta li'. I simboli veri stanno nel modulo in
 | Comando `/Watched` / `/tracked` (profili monitorati) | `bot.py` | `watched_command` |
 | Comando `/trovamiduplicati` (dedup manuale) | `bot.py` | `duplicate_check_and_interaction` |
 | Comando `/recalculate` (ricalcolo hash) | `bot.py` | `rehash_command` |
-| Comando `/mapactor`, `/listmap`, `/editactor`, `/delactor` | `bot.py` | `mapactor_command`, `listmap_command`, `editactor_command`, `delactor_command` |
+| Comandi attore | `bot.py` | `mapactor_command`, `listmap_command`, `editactor_command`, `delactor_command` |
 | Messaggio non riconosciuto | `bot.py` | `handle_unknown` |
 | Notifica di avvio al boot | `bot.py` | `_notify_startup` |
 | Avvio/stop del watcher interno | `bot.py` | `start_daily_watcher`, `stop_daily_watcher`, `_run_daily_watcher` |
@@ -62,8 +62,8 @@ importano da li', quindi la mappa punta li'. I simboli veri stanno nel modulo in
 | Determinare se un post Redgifs e' video o foto | `redgifs_helper.py` | `redgifs_post_type` |
 | Scaricare un intero profilo Redgifs | `redgifs_helper.py` | `download_redgifs_profile` |
 | Eseguire il download Mega via `megadl` | `mega_helper.py` | `download_with_megatools`, `download_mega_auto` |
-| Rercare il binario `megadl` nel sistema | `mega_helper.py` | `get_megadl_command` |
-| Rercare un link Mega | `mega_helper.py` | `is_mega_link`, `extract_mega_info` |
+| Cercare il binario `megadl` nel sistema | `mega_helper.py` | `get_megadl_command` |
+| Riconoscere un link Mega | `mega_helper.py` | `is_mega_link`, `extract_mega_info` |
 
 ## Watcher Reddit
 
@@ -72,23 +72,22 @@ importano da li', quindi la mappa punta li'. I simboli veri stanno nel modulo in
 | Eseguire una sola passata del watcher | `reddit_helper.py` | `reddit_watcher_once` |
 | Loop giornaliero interno del watcher | `reddit_helper.py` | `reddit_profile_watcher_loop` |
 | Aggiungere un profilo alla watchlist | `reddit_helper.py` | `add_reddit_profile_to_watch` |
-| Leggere/scrivere la watchlist e il destinatario notifiche | `reddit_helper.py` | `WATCH_FILE`, `USER_FILE`, `save_notify_user`, `get_notify_user` |
-| Gestire i file di stato del watcher | `reddit_watch.json`, `reddit_notify_user.txt` in `SAVE_DIR` | — |
+| Leggere/scrivere watchlist e destinatario notifiche | `reddit_helper.py` | `WATCH_FILE`, `USER_FILE`, `save_notify_user`, `get_notify_user` |
+| File di stato del watcher | `reddit_watch.json`, `reddit_notify_user.txt` in `SAVE_DIR` | — |
 
 ## Deduplicazione
 
 | Vuoi… | File | Entry point |
 |---|---|---|
-| Deduplicare un file appena scaricato | `deduplica.py` | `deduplica_file` (wrapper) -> `dedupe_core.py` |
+| Deduplicare un file appena scaricato (da call site) | `deduplica.py` | `deduplica_file` (wrapper) -> `dedupe_core.py` |
 | Implementazione reale della dedup per singolo file | `dedupe_core.py` | `deduplica_file` |
 | Regola su quale copia tenere | `dedupe_core.py` | `_keep_priority`, `_is_auto` |
 | Calcolare l'hash MD5 di un file | `dedupe_core.py` | `file_hash` |
 | Estensioni considerate media | `dedupe_core.py` | `VALID_EXTS` |
 | Lock tra processi (bot + CronJob) | `dedupe_core.py` | `_with_lock`, `.dedupe.lock` |
-| Sweep completo e rimozione duplicati | `dedupe_core.py` | `scan_and_clean` |
-| Interfaccia dello sweep (es. da CLI) | `find_duplicate_helper.py` | `find_duplicates` (wrapper) -> `dedupe_core.py` |
-| Ricalcolare tutti gli hash e aggiornare il DB | `find_duplicate_helper.py` | `rehash_files` (wrapper) -> `dedupe_core.py` |
-| Logica reale dello sweep / del rehash | `dedupe_core.py` | `scan_and_clean`, `rehash_files` |
+| Logica reale dello sweep e del rehash | `dedupe_core.py` | `scan_and_clean`, `rehash_files` |
+| Sweep completo e rimozione duplicati (da CLI) | `find_duplicate_helper.py` | `find_duplicates` (wrapper) -> `dedupe_core.py` |
+| Ricalcolare tutti gli hash e aggiornare il DB (da CLI) | `find_duplicate_helper.py` | `rehash_files` (wrapper) -> `dedupe_core.py` |
 
 ## Database SQLite
 
@@ -98,7 +97,7 @@ importano da li', quindi la mappa punta li'. I simboli veri stanno nel modulo in
 | Percorso del DB | `db_helper.py` | `DB_FILENAME`, `get_db_path` |
 | Inserire un file | `db_helper.py` | `insert_file` |
 | Cercare file con lo stesso hash | `db_helper.py` | `find_files_by_hash` |
-| Leggi una entry per filepath | `db_helper.py` | `get_file_entry` |
+| Leggere una entry per filepath | `db_helper.py` | `get_file_entry` |
 | Aggiornare l'hash di un file | `db_helper.py` | `update_file_hash` |
 | Rimuovere una entry | `db_helper.py` | `remove_filepath` |
 | Contare foto e video (per `/numeri`) | `db_helper.py` | `count_media_by_type` |
@@ -110,7 +109,7 @@ importano da li', quindi la mappa punta li'. I simboli veri stanno nel modulo in
 | Costruire il path di salvataggio (`autodownloader/...`) | `salvataggio.py` | `build_path` |
 | Normalizzare nomi di file/cartelle | `salvataggio.py` | `safe_name` |
 | Scrivere il sidecar `.source.txt` | `source_helper.py` | `write_source` |
-| File che ha prodotto un download | `<file>.source.txt` accanto al media | — |
+| Dove finisce il file | `<file>.source.txt` accanto al media | — |
 | Logica del path nella dedup (cosa e' "autodownloader") | `dedupe_core.py` | `_is_auto` |
 
 ## Attore (mappatura username -> nome)
@@ -139,7 +138,7 @@ importano da li', quindi la mappa punta li'. I simboli veri stanno nel modulo in
 | Vuoi… | File | Entry point |
 |---|---|---|
 | Valori di default delle variabili d'ambiente | `.env.example` | — |
-| Variabili d'ambiente lette dal codice | `bot.py` (blocchi `os.environ.get`) | `SAVE_DIR`, `ALLOWED_CHAT_IDS`, `WATCHER_ENABLED`, `STARTUP_NOTIFY`, `STARTUP_CHAT_ID`, `TELEGRAM_TOKEN` |
+| Variabili lette dal codice | `bot.py` | `SAVE_DIR`, `ALLOWED_CHAT_IDS`, `WATCHER_ENABLED`, `STARTUP_NOTIFY`, `STARTUP_CHAT_ID`, `TELEGRAM_TOKEN` |
 | Credenziali Reddit | `reddit_helper.py` | `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, `REDDIT_USER_AGENT` |
 
 ## Deploy e container
@@ -151,7 +150,7 @@ importano da li', quindi la mappa punta li'. I simboli veri stanno nel modulo in
 | Deploy Kubernetes | `k8s/bot-deployment.yaml` | `kind: Deployment` |
 | CronJob del watcher | `k8s/watcher-cronjob.yaml` | `kind: CronJob` |
 | Installazione megatools sul server | `install_megatools.sh`, `install_megadown.sh` | — |
-| Publicazione immagine (CI) | `.github/workflows/docker-publish.yml` | `IMAGE_NAME` |
+| Pubblicazione immagine (CI) | `.github/workflows/docker-publish.yml` | `IMAGE_NAME` |
 | Aggiornamento dipendenze (CI) | `.github/dependabot.yml` | `package-ecosystem` |
 
 ## Test
@@ -170,19 +169,20 @@ importano da li', quindi la mappa punta li'. I simboli veri stanno nel modulo in
   non qui: questa PR e' solo documentazione.
 - `reddit_helper.py` (~17 KB, oltre il limite di 500 righe): download per tipo di post +
   watcher + watchlist. Da separare in "download" e "watcher".
-- `db_helper.py`: la funzione `count_media_by_type` e' definita **prima** degli `import`
-  (`os`, `sqlite3`) che usa: funziona perche' le chiamate sono a runtime, ma va spostata
-  sotto gli import.
-- `mega_helper.py` e `redgifs_helper.py`: ogni errore e' traghettato in un `print` dentro
-  un `except Exception` (fallback silenzioso). Da sostituire con `logger.error`.
+- `mega_helper.py` e `redgifs_helper.py`: ogni errore e' traghettato in un `print` dentro un
+  `except Exception` (fallback silenzioso). Da sostituire con `logger.error`.
 - `bot.py`: molte chiamate Telegram sono avvolte in `try/except Exception` con risposta
-  generica all'utente: errore reale invisibile.
+  generica all'utente: l'errore reale resta invisibile.
 - `requirements.txt`: `pytest` e' una dipendenza di sviluppo messa tra le dipendenze
   runtime.
-- `deduplica.py`, `find_duplicate_helper.py`: wrapper di re-export verso `dedupe_core.py`.
-  Sono mantenuti perche' i call site (e la documentazione esistente) li importano.
-- `install_megatools.sh` e `install_megadown.sh`: identici (stesso contenuto, 2165 byte).
-  Duplicato da collassare.
-- `.DS_Store` presente in root e in `.github/`: artefatto macOS, assente dal `.gitignore`.
+- `deduplica.py` e `find_duplicate_helper.py`: wrapper di re-export verso `dedupe_core.py`,
+  mantenuti perche' i call site li importano. Da collassare quando si aggiorna il call site.
+- `install_megatools.sh` e `install_megadown.sh`: identici (stesso contenuto, 2165 byte ciascuno).
+  Duplicato da collassare in uno solo.
+- `.DS_Store` presente in root (10244 byte) e in `.github/` (6148 byte): artefatto macOS,
+  assente dal `.gitignore`.
 - `Dockerfile`: nessun `megatools`/`megadl`, quindi il download Mega non funziona nel
-  container cosi' com'e'. Gli script di installazione sono pensati per il host.
+  container cosi' com'e'. Gli script di installazione sono pensati per l'host.
+- `dedupe_core.py`: lo sweep e il rehash si basano su `find_files_by_hash`/`get_file_entry`,
+  quindi se il DB contiene path assoluti scaduti (directory spostata) i duplicati non vengono
+  rilevati: serve `rehash_files`.

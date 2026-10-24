@@ -1,36 +1,13 @@
-def count_media_by_type(directory):
-    """
-    Restituisce un dizionario con il conteggio di foto e video nel db.
-    """
-    # Ensure DB and tables exist before opening a connection to avoid sqlite3.OperationalError
-    ensure_db(directory)
-    path = get_db_path(directory)
-    conn = sqlite3.connect(path)
-    try:
-        cur = conn.cursor()
-        # Estensioni immagini e video
-        foto_ext = ('.jpg', '.jpeg', '.png', '.gif', '.webp')
-        video_ext = ('.mp4', '.mov')
-        cur.execute("SELECT filename FROM files")
-        foto = 0
-        video = 0
-        for (fname,) in cur.fetchall():
-            low = fname.lower()
-            if low.endswith(foto_ext):
-                foto += 1
-            elif low.endswith(video_ext):
-                video += 1
-        return {"foto": foto, "video": video}
-    finally:
-        conn.close()
-import os
 import sqlite3
+import os
 from datetime import datetime
 
 DB_FILENAME = "bot.db"
 
+
 def get_db_path(directory):
     return os.path.join(directory, DB_FILENAME)
+
 
 def ensure_db(directory):
     path = get_db_path(directory)
@@ -85,13 +62,14 @@ def ensure_db(directory):
             cur.execute("PRAGMA journal_mode=WAL")
         except Exception:
             pass
-        # Crea indice su hash per ricerche più veloci
+        # Crea indice su hash per ricerche piu' veloci
         try:
             cur.execute("CREATE INDEX IF NOT EXISTS idx_files_hash ON files(hash)")
         except Exception:
             pass
     finally:
         conn.close()
+
 
 def insert_file(directory, filepath, h):
     """
@@ -113,6 +91,7 @@ def insert_file(directory, filepath, h):
     finally:
         conn.close()
 
+
 def find_files_by_hash(directory, h):
     path = get_db_path(directory)
     conn = sqlite3.connect(path)
@@ -122,6 +101,7 @@ def find_files_by_hash(directory, h):
         return [r[0] for r in cur.fetchall()]
     finally:
         conn.close()
+
 
 def remove_filepath(directory, filepath):
     path = get_db_path(directory)
@@ -162,5 +142,32 @@ def update_file_hash(directory, filepath, new_hash):
         cur.execute("UPDATE files SET hash = ? WHERE filepath = ?", (new_hash, filepath))
         conn.commit()
         return cur.rowcount
+    finally:
+        conn.close()
+
+
+def count_media_by_type(directory):
+    """
+    Restituisce un dizionario con il conteggio di foto e video nel db.
+    """
+    # Ensure DB and tables exist before opening a connection to avoid sqlite3.OperationalError
+    ensure_db(directory)
+    path = get_db_path(directory)
+    conn = sqlite3.connect(path)
+    try:
+        cur = conn.cursor()
+        # Estensioni immagini e video
+        foto_ext = ('.jpg', '.jpeg', '.png', '.gif', '.webp')
+        video_ext = ('.mp4', '.mov')
+        cur.execute("SELECT filename FROM files")
+        foto = 0
+        video = 0
+        for (fname,) in cur.fetchall():
+            low = fname.lower()
+            if low.endswith(foto_ext):
+                foto += 1
+            elif low.endswith(video_ext):
+                video += 1
+        return {"foto": foto, "video": video}
     finally:
         conn.close()
