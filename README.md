@@ -1,142 +1,44 @@
 # Botg-saving-files
 
-Bot Telegram per il salvataggio automatico di media da Telegram, Reddit, Redgifs e Mega, con deduplicazione e gestione storage su filesystem locale o mount di rete. Supporta esecuzione in Docker e Kubernetes, con watcher Reddit schedulabile (interno o via CronJob).
+Bot Telegram che salva automaticamente media da Telegram, Reddit, Redgifs e Mega, con
+deduplicazione MD5 (SQLite) e gestione dello storage su filesystem locale o mount di rete.
+Eseguibile in Docker, Docker Compose o Kubernetes, con watcher Reddit schedulabile
+(interno o via CronJob).
 
----
+## Avvio rapido
 
-## Scopo del progetto
+```bash
+cp .env.example .env       # compila TELEGRAM_TOKEN e le altre variabili
+docker compose up -d --build
+```
 
-- Automatizzare il salvataggio di foto, video e altri media ricevuti su Telegram o scaricati da link ricevuti di Reddit, Redgifs, Mega.
-- Evitare duplicati tramite hash e database SQLite.
-- Consentire l'esecuzione in ambienti containerizzati (Docker/Kubernetes) e su storage di rete.
-- Permettere la schedulazione del download periodico da profili Reddit (watcher giornaliero).
-- Permettere il download di contenuti anche se il server era offline al momento del messaggio (forse da implementare).
+Oppure in locale: `pip install -r requirements.txt && python bot.py`.
 
----
+Vedi `docs/OPERATIONS.md` per i dettagli (variabili, watcher, deploy, megatools).
 
-## Funzionalità principali
+## Indice
 
-- **Bot Telegram**: riceve media (foto, video, animazioni) e li salva in una directory configurabile.
-- **Download da Reddit, Redgifs, Mega**: scarica media da link inviati o da profili monitorati.
-- **Deduplicazione**: elimina file duplicati tramite hash, gestendo la persistenza in SQLite (`bot.db`).
-- **Watcher Reddit**: può essere eseguito come job giornaliero (interno al bot o via CronJob) per scaricare nuovi media dai profili seguiti (dobbiamo scegliere quale sia il metodo migliore?).
-- **Notifica di avvio**: invia un messaggio Telegram a un admin/chat all’avvio del bot.
-- **Container-ready**: tutto configurabile via `.env`, pronto per Docker/Kubernetes.
+| Vuoi… | Apri |
+|---|---|
+| Trovare una funzione, un comando, un simbolo | [`docs/REFERENCE.md`](docs/REFERENCE.md) |
+| Capire come funziona (flussi, dedup, forward) | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
+| Conoscere le regole prima di scrivere codice | [`docs/CONVENTIONS.md`](docs/CONVENTIONS.md) |
+| Installare, avviare, schedulare | [`docs/OPERATIONS.md`](docs/OPERATIONS.md) |
+| Risolvere un errore | [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) |
 
----
+## Struttura
 
-## Architettura
+- **`bot.py`** — entry point: bot Telegram (handler, comandi) e watcher interno opzionale.
+- **`reddit_helper.py`** — download da Reddit (post, gallerie, video, profili) + watcher.
+- **`redgifs_helper.py`** — download da Redgifs (foto/video/profili) via `yt-dlp`.
+- **`mega_helper.py`** — download da Mega via `megadl`.
+- **`dedupe_core.py`** — deduplicazione MD5 e sweep; `deduplica.py` e
+  `find_duplicate_helper.py` sono i wrapper usati dai call site.
+- **`db_helper.py`** — schema e query del DB SQLite (`bot.db` in `SAVE_DIR`).
+- **`salvataggio.py`**, **`source_helper.py`**, **`actor_map.py`**, **`actor_report.py`**,
+  **`report_helper.py`**, **`log_helper.py`** — path normalizzati, sidecar `.source.txt`,
+  mappatura attore, report e logging.
+- **`k8s/`**, **`Dockerfile`**, **`docker-compose.yml`**, **`.github/`** — deploy e CI.
 
-- **bot.py**: entrypoint principale, avvia il bot Telegram e (opzionalmente) il watcher Reddit giornaliero.
-- **reddit_helper.py**: funzioni per scaricare media da Reddit; watcher one-shot e loop.
-- **db_helper.py**: gestione database SQLite per deduplicazione.
-- **run_watcher.py**: script per eseguire il watcher Reddit una sola volta (usato da CronJob).
-- **k8s/**: manifesti Kubernetes per deploy e CronJob.
-- **requirements.txt**: dipendenze Python.
-
----
-
-## Note tecniche
-
-- **Lazy import e risorse**: le librerie pesanti (yt-dlp, requests, asyncpraw) vengono importate solo quando servono, per ridurre il consumo di RAM a idle.
-- **Database**: ogni funzione che accede al DB apre e chiude la connessione in modo sicuro (vedi `db_helper.py`).
-- **Watcher Reddit**: può essere schedulato internamente (loop ogni 24h) o esternamente (consigliato per ambienti containerizzati).
-- **Chiusura risorse**: i client Reddit vengono chiusi esplicitamente dopo ogni run per evitare warning e memory leak.
-- **Kubernetes**: sono forniti manifesti per deploy e CronJob; puoi personalizzare risorse/limiti secondo le tue esigenze.
-
----
-
-## Comandi utili
-
-- **Controlla RAM/CPU del container**:
-  ```bash
-  docker stats botg --no-stream
-  ```
-- **Vedi log**:
-  ```bash
-  docker logs -f botg
-  ```
-- **Esegui deduplicazione manuale**:
-
-  ```bash
-  docker exec -it botg python -c 'from find_duplicate_helper import find_duplicates; print(find_duplicates("/mnt/truenas-bot"))'
-  ```
-
-  ## Esecuzione con Docker Compose (senza .env)
-
-  Ho aggiunto un file `docker-compose.yml` nella root del progetto che contiene tutte le variabili d'ambiente al suo interno (in modo da non dover usare un file `.env`). Il file fornisce due servizi:
-
-  - `botg`: costruisce l'immagine dal `Dockerfile` e avvia il bot Telegram (polling).
-  - `watcher`: usa l'immagine già buildata e lancia una singola esecuzione dello script `run_watcher.py` (utile per schedulare il watcher via cron o per eseguire manualmente una run).
-
-  Prima di avviare, apri `docker-compose.yml` e sostituisci `REPLACE_WITH_YOUR_TELEGRAM_TOKEN` con il token reale del tuo bot Telegram. Altre variabili (ad esempio le credenziali Reddit) sono lasciate vuote e vanno compilate solo se vuoi usare quelle feature.
-
-  Esempio di file creato: `docker-compose.yml` (già presente nella root del repository)
-
-  Comandi utili:
-
-  ```bash
-  # Build e avvia in background
-  docker compose up -d --build
-
-  # Segui i log del bot
-  docker compose logs -f botg
-
-  # Esegui manualmente il watcher (senza avviare il service watcher)
-  docker compose run --rm watcher
-
-  # Fermare e rimuovere i container
-  docker compose down
-  ```
-
-  Note di sicurezza e best practice
-
-  - Il `docker-compose.yml` contiene segnaposto per il token: NON committare token o credenziali reali nel repository pubblico. Se preferisci non tenere il token nel file compose, usa `env_file` o Docker secrets.
-  - Il volume `./salvataggi:/mnt/truenas-bot` monta la cartella `salvataggi` nella root del progetto come storage persistente dei file scaricati. Puoi cambiare il path host a piacere.
-  - Se vuoi che il bot gestisca Mega usando `megadl` (megatools), aggiungi l'installazione di `megatools` nel `Dockerfile` o utilizza un servizio separato che esegue `megadl` sul host.
-
-  Se vuoi, posso aggiornare il `Dockerfile` per includere `megatools` o creare una versione `docker-compose.override.yml` per ambiente di produzione con secrets (Kubernetes-style).
-
----
-
-## Best practice
-
-- Usa watcher esterno (CronJob) per massima leggerezza e isolamento.
-- Monta la directory di salvataggio su storage persistente (es. volume host o PVC in K8s).
-- Proteggi il file `.env` (contiene credenziali sensibili).
-- Aggiorna regolarmente le dipendenze (`requirements.txt`).
-
----
-
-## TODO e miglioramenti possibili
-
-- [ ] Refactor finale di `reddit_helper.py` per lazy init/close client Reddit in tutte le funzioni.
-- [ ] Aggiornare i manifesti K8s se cambi la logica di scheduling.
-- [ ] (Opzionale) Aggiungere healthcheck e readiness probe per Kubernetes.
-- [ ] (Opzionale) Logging strutturato e metriche Prometheus.
-
----
-
-esempi
-
-## Struttura delle cartelle e deduplicazione
-
-- Tutti i nuovi file scaricati dal bot vengono salvati in una sottocartella `autodownloader/` rispetto alla directory base di salvataggio.
-  - Esempio: `/mnt/truenas-bot/autodownloader/Reddit/utente/12345/nomefile.jpg`
-- I file già presenti nella root o in altre sottocartelle restano dove sono.
-- In caso di duplicati (stesso hash):
-  - Se uno dei file è in `autodownloader/` e l'altro fuori, viene sempre mantenuto quello in `autodownloader/` (anche se più nuovo o più vecchio), eliminando l'altro.
-  - Se entrambi sono in `autodownloader/` o entrambi fuori, viene mantenuto il primo trovato.
-- La deduplicazione batch/manuale ricalcola e aggiorna l'hash di tutti i file, ricostruendo lo stato del database.
-
-### Esempi di path
-
-- autodownloader/reddit/pics/username123/2023-10-15_immagine.jpg
-- autodownloader/redgifs/utente456/video1.mp4
-- autodownloader/mega/share_di_prova/file.pdf
-
-> I nomi delle cartelle e dei file vengono normalizzati e troncati per garantire portabilità e compatibilità cross-platform.
-
----
-
-Per domande o suggerimenti: apri una issue su GitHub o contatta l'autore.
+La mappa completa richiesta -> file -> entry point e' in
+[`docs/REFERENCE.md`](docs/REFERENCE.md).
